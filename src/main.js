@@ -19,6 +19,7 @@ let slotFile = null;
 let pinned = false;
 let cwd = tjs.homeDir;
 let command = null; // store key "command": run this instead of a plain shell
+let busy = false;    // Claude Code in this session is working
 
 // ---- process helpers ----------------------------------------------------
 
@@ -132,8 +133,27 @@ function frame(type, payload) {
 let session = null;
 let sessionSeq = 0;
 
+// Claude Code sets the terminal title (OSC 0) to "<prefix> <title>", where
+// the prefix alternates ◐/◑ while it works and is ✳ when it's idle.
+const TITLE_RE = /\x1b\][02];([^\x07\x1b]*)(?:\x07|\x1b\\)/g;
+
+// Scans output for title changes; returns the unterminated tail to prepend
+// to the next chunk, so a sequence split across reads isn't missed.
+function watchTitle(text) {
+  let title = null;
+  let end = 0;
+  for (const m of text.matchAll(TITLE_RE)) {
+    title = m[1];
+    end = m.index + m[0].length;
+  }
+  if (title !== null) setBusy(/^[\u25D0\u25D1]/.test(title));
+  const open = text.lastIndexOf('\x1b]');
+  return open >= end && text.length - open < 1024 ? text.slice(open) : '';
+}
+
 function startSession(rows, cols) {
   session?.kill();
+  setBusy(false);
   const id = ++sessionSeq;
   const shell = tjs.env.SHELL || '/bin/zsh';
   // A plain login shell (interactive: it's on a tty). A custom command runs
@@ -187,6 +207,7 @@ function startSession(rows, cols) {
     opened = true;
     await tjs.remove(dir, { recursive: true }).catch(() => {});
 
+    let titleTail = '';
     const dec = new TextDecoder();
     const reader = s.proc.stdout.getReader();
     // Coalesce bursts into one bridge message per ~8ms.
@@ -203,6 +224,7 @@ function startSession(rows, cols) {
       if (done) break;
       const text = dec.decode(value, { stream: true });
       if (!text) continue;
+      titleTail = watchTitle(titleTail + text);
       s.scrollback.push(text);
       s.scrollbackBytes += text.length;
       while (s.scrollbackBytes > SCROLLBACK_BYTES && s.scrollback.length > 1) {
@@ -215,6 +237,7 @@ function startSession(rows, cols) {
     flush();
     const st = await exited;
     s.exited = true;
+    if (session === s) setBusy(false);
     if (session === s) app.push('pty-exit', { session: id, code: st.exit_status, signal: st.term_signal });
   })().catch((e) => {
     s.exited = true;
@@ -283,10 +306,28 @@ function folderName(p) {
   return p.split('/').filter(Boolean).pop() || p;
 }
 
+const SPINNER = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+let spinFrame = 0;
+let spinTimer = null;
+
+function setBusy(value) {
+  if (value === busy) return;
+  busy = value;
+  clearInterval(spinTimer);
+  spinTimer = null;
+  if (busy) {
+    spinTimer = setInterval(() => {
+      spinFrame = (spinFrame + 1) % SPINNER.length;
+      refreshTray();
+    }, 150);
+  }
+  refreshTray();
+}
+
 function refreshTray() {
   app.tray.set({
     icon: 'sf:apple.terminal',
-    title: String(slot),
+    title: busy ? `${slot} ${SPINNER[spinFrame]}` : String(slot),
     tooltip: `codebar ${slot} — ${folderName(cwd)}`,
     menu: trayMenu(),
     primaryAction: true,

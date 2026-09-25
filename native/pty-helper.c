@@ -9,11 +9,15 @@
 //          input and control share one channel:
 //           'd' <u32 len BE> <bytes>        keystrokes / paste
 //           'r' <u32 len=4>  <u16 rows> <u16 cols>   resize (BE)
+// While the output is quiet, the helper also reports the working directory of
+// the pty's foreground process as OSC 7 (ESC ] 7 ; file://host/path BEL),
+// the same sequence shells emit, so the page can show where the session is.
 // Exits with the child's status. Closing the FIFO, or the backend dying,
 // hangs up the child.
 
 #include <errno.h>
 #include <fcntl.h>
+#include <libproc.h>
 #include <poll.h>
 #include <signal.h>
 #include <stdint.h>
@@ -55,6 +59,32 @@ static int write_all(int fd, const uint8_t *p, size_t n) {
     n -= (size_t)w;
   }
   return 0;
+}
+
+// Emits OSC 7 when the foreground process's cwd differs from the last report.
+static void report_cwd(int master) {
+  static char last[MAXPATHLEN];
+  pid_t pid = tcgetpgrp(master);
+  if (pid <= 0) pid = child;
+  struct proc_vnodepathinfo vpi;
+  if (proc_pidinfo(pid, PROC_PIDVNODEPATHINFO, 0, &vpi, sizeof vpi) != sizeof vpi) return;
+  const char *cwd = vpi.pvi_cdir.vip_path;
+  if (!cwd[0] || strcmp(cwd, last) == 0) return;
+  strlcpy(last, cwd, sizeof last);
+
+  char host[256] = "";
+  gethostname(host, sizeof host);
+  char seq[MAXPATHLEN * 3 + 300];
+  int n = snprintf(seq, sizeof seq, "\x1b]7;file://%s", host);
+  for (const unsigned char *c = (const unsigned char *)cwd; *c && n < (int)sizeof seq - 8; c++) {
+    if ((*c >= 'a' && *c <= 'z') || (*c >= 'A' && *c <= 'Z') || (*c >= '0' && *c <= '9') ||
+        strchr("/-._~", *c))
+      seq[n++] = (char)*c;
+    else
+      n += snprintf(seq + n, sizeof seq - n, "%%%02X", *c);
+  }
+  seq[n++] = '\a';
+  write_all(STDOUT_FILENO, (const uint8_t *)seq, (size_t)n);
 }
 
 int main(int argc, char **argv) {
@@ -108,13 +138,18 @@ int main(int argc, char **argv) {
 
   for (;;) {
     struct pollfd fds[2] = {{input, POLLIN, 0}, {master, POLLIN, 0}};
-    int ready = poll(fds, 2, 1000);
+    int ready = poll(fds, 2, 250);
     if (ready < 0) {
       if (errno == EINTR) continue;
       break;
     }
     if (getppid() != parent) return finish();  // backend went away
-    if (ready == 0) continue;
+    if (ready == 0) {
+      // Only between bursts, so the report never lands inside another
+      // escape sequence or a split UTF-8 character.
+      report_cwd(master);
+      continue;
+    }
 
     if (fds[1].revents & (POLLIN | POLLHUP | POLLERR)) {
       ssize_t n = read(master, out, sizeof out);

@@ -31,6 +31,16 @@ term.loadAddon(fit);
 term.loadAddon(new WebLinksAddon.WebLinksAddon((_e, url) => tiny.api.call('openUrl', { url })));
 term.open($('term'));
 
+// OSC 7 (file://host/path): the current directory, reported by the pty
+// helper (and by shells configured to emit it).
+term.parser.registerOscHandler(7, (data) => {
+  try {
+    const path = decodeURIComponent(new URL(data).pathname);
+    if (path) showFolder(path);
+  } catch {}
+  return true;
+});
+
 let session = 0;
 let exited = false;
 
