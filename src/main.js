@@ -172,9 +172,19 @@ function startSession(rows, cols) {
       stdin: 'ignore', stdout: 'pipe', stderr: 'inherit',
       env: { ...tjs.env, CODEBAR_INSTANCE: String(slot) },
     });
+    const exited = s.proc.wait();
     // Opening the write end completes once the helper opened the read end,
-    // so the path can go right away.
+    // so the path can go right away. If the helper dies before that, the open
+    // would block forever (and keep the whole process from quitting), so
+    // release it by opening the read end ourselves.
+    let opened = false;
+    exited.then(async () => {
+      if (opened) return;
+      const r = await tjs.open(fifo, 'r').catch(() => null);
+      await r?.close();
+    });
     s.input = await tjs.open(fifo, 'w');
+    opened = true;
     await tjs.remove(dir, { recursive: true }).catch(() => {});
 
     const dec = new TextDecoder();
@@ -203,7 +213,7 @@ function startSession(rows, cols) {
     }
     clearTimeout(flushTimer);
     flush();
-    const st = await s.proc.wait();
+    const st = await exited;
     s.exited = true;
     if (session === s) app.push('pty-exit', { session: id, code: st.exit_status, signal: st.term_signal });
   })().catch((e) => {

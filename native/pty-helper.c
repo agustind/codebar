@@ -9,7 +9,8 @@
 //          input and control share one channel:
 //           'd' <u32 len BE> <bytes>        keystrokes / paste
 //           'r' <u32 len=4>  <u16 rows> <u16 cols>   resize (BE)
-// Exits with the child's status. Closing the FIFO hangs up the child.
+// Exits with the child's status. Closing the FIFO, or the backend dying,
+// hangs up the child.
 
 #include <errno.h>
 #include <fcntl.h>
@@ -100,12 +101,20 @@ int main(int argc, char **argv) {
   size_t have = 0;
   uint8_t out[65536];
 
+  // macOS poll() doesn't report the FIFO's writer closing, so an EOF on the
+  // input never arrives when the backend dies. Watch for being reparented
+  // instead.
+  pid_t parent = getppid();
+
   for (;;) {
     struct pollfd fds[2] = {{input, POLLIN, 0}, {master, POLLIN, 0}};
-    if (poll(fds, 2, -1) < 0) {
+    int ready = poll(fds, 2, 1000);
+    if (ready < 0) {
       if (errno == EINTR) continue;
       break;
     }
+    if (getppid() != parent) return finish();  // backend went away
+    if (ready == 0) continue;
 
     if (fds[1].revents & (POLLIN | POLLHUP | POLLERR)) {
       ssize_t n = read(master, out, sizeof out);
