@@ -1,0 +1,20 @@
+{
+  "name": "codebar",
+  "title": "codebar",
+  "size": "760x480",
+  "id": "app.codebar",
+  "version": "0.1.0",
+  "minTinyjsVersion": "0.34.0",
+  "activation": "accessory",
+  "contextMenu": false,
+  "chrome": {
+    "frame": false,
+    "windowControls": false,
+    "transparent": true,
+    "menu": false
+  },
+  "signIdentity": "Developer ID Application: DEMUX S.A.S. (4637X2WX3Q)",
+  "notarize": {
+    "profile": "codebar-notary"
+  }
+}

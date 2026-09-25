@@ -1,0 +1,115 @@
+:root {
+  --bg: #16181d;
+  --bar: #1e2128;
+  --line: #2c313b;
+  --text: #d8dce4;
+  --muted: #7d8595;
+  --accent: #d97757;
+}
+
+* { box-sizing: border-box; }
+
+html { background: transparent; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  color: var(--text);
+  font: 12px -apple-system, BlinkMacSystemFont, sans-serif;
+  overflow: hidden;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 8px;
+  background: var(--bar);
+  border-bottom: 1px solid var(--line);
+  border-radius: 10px 10px 0 0;
+  flex: none;
+}
+
+.badge {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+  font-size: 11px;
+  line-height: 18px;
+  text-align: center;
+}
+
+button {
+  font: inherit;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+}
+button:hover { background: rgba(255, 255, 255, .06); border-color: var(--line); }
+
+.folder {
+  padding: 2px 8px;
+  max-width: 50%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+}
+
+.spacer { flex: 1; }
+
+.hint { color: var(--muted); font-size: 11px; }
+
+.icon {
+  width: 24px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+}
+.icon svg { width: 12px; height: 12px; fill: var(--muted); }
+.icon.on svg { fill: var(--accent); }
+
+main {
+  flex: 1;
+  min-height: 0;
+  padding: 6px 4px 4px 10px;
+}
+
+.xterm, .xterm .xterm-viewport { background: var(--bg) !important; }
+.xterm-viewport::-webkit-scrollbar { width: 8px; }
+.xterm-viewport::-webkit-scrollbar-thumb { background: var(--line); border-radius: 4px; }
+
+#exited {
+  position: absolute;
+  left: 50%;
+  bottom: 14px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 6px 6px 12px;
+  background: var(--bar);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, .4);
+}
+#exited[hidden] { display: none; }
+#exited button { background: var(--accent); color: #fff; padding: 3px 10px; }

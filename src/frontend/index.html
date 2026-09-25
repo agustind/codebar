@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>codebar</title>
+<link rel="stylesheet" href="vendor/xterm.css">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header>
+  <span class="badge" id="slot">1</span>
+  <button class="folder" id="folder" title="Change folder (⌘O)">~</button>
+  <span class="spacer"></span>
+  <span class="hint" id="hotkey"></span>
+  <button class="icon" id="pin" title="Keep open when unfocused">
+    <svg viewBox="0 0 16 16"><path d="M9.5 1.5 14.5 6.5 12 7 9 10v3.5L7.5 15 5 12.5 1.5 16 0 14.5 3.5 11 1 8.5 2.5 7H6l3-3z"/></svg>
+  </button>
+  <button class="icon" id="add" title="New instance (⌘N)">
+    <svg viewBox="0 0 16 16"><path d="M7 2h2v5h5v2H9v5H7V9H2V7h5z"/></svg>
+  </button>
+</header>
+
+<main id="term"></main>
+
+<div id="exited" hidden>
+  <span id="exitMsg">Session ended</span>
+  <button id="restart">Restart ↵</button>
+</div>
+
+<script src="vendor/xterm.js"></script>
+<script src="vendor/addon-fit.js"></script>
+<script src="vendor/addon-web-links.js"></script>
+<script src="terminal.js"></script>
+</body>
+</html>
