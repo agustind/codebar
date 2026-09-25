@@ -1,6 +1,6 @@
 # codebar
 
-A macOS menu-bar terminal for running Claude Code, built with [tinyjs](https://tinyjs.app).
+A macOS menu-bar terminal for running Claude Code.
 
 - **Click** the menu-bar icon, or press **⌃⌥1**, to drop a terminal down under the icon. It opens a plain login shell; `cd` to your project and run `claude` yourself.
 - **Right-click** the icon, then **New Instance**, to add another icon with its own terminal and session. Instance *n* is labelled `n` and toggles with **⌃⌥n**.

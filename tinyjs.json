@@ -15,6 +15,6 @@
   },
   "signIdentity": "Developer ID Application: DEMUX S.A.S. (4637X2WX3Q)",
   "notarize": {
-    "profile": "codebar-notary"
+    "profile": "vercelmenu"
   }
 }
