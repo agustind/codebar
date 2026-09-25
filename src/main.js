@@ -109,17 +109,15 @@ async function quit() {
 async function helperPath() {
   const src = decodeURIComponent(new URL('./bin/pty-helper', import.meta.url).pathname);
   const dst = app.paths.cache + '/pty-helper';
-  const bytes = await tjs.readFile(src);
-  let same = false;
-  try {
-    const cur = await tjs.readFile(dst);
-    same = cur.length === bytes.length && cur.every((b, i) => b === bytes[i]);
-  } catch {}
-  if (!same) {
-    await tjs.makeDir(app.paths.cache, { recursive: true }).catch(() => {});
-    await tjs.writeFile(dst, bytes);
-    await run(['/bin/chmod', '755', dst]);
-  }
+  // Always install a fresh file and rename it into place. Overwriting a binary
+  // that has already run keeps its inode, and macOS then SIGKILLs it on exec
+  // because its cached code signature no longer matches; a copy left in that
+  // state looks byte-identical, so comparing contents can't detect it.
+  await tjs.makeDir(app.paths.cache, { recursive: true }).catch(() => {});
+  const tmp = dst + '.' + tjs.pid;
+  await tjs.writeFile(tmp, await tjs.readFile(src));
+  await run(['/bin/chmod', '755', tmp]);
+  await run(['/bin/mv', '-f', tmp, dst]);
   return dst;
 }
 
