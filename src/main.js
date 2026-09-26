@@ -20,10 +20,12 @@ let slotFile = null;
 let pinned = false;
 let cwd = tjs.homeDir;
 let command = null; // store key "command": run this instead of a plain shell
-let busy = false;    // Claude Code in this session is working
+// Claude Code in this session: 'idle', 'busy' (working) or 'waiting' (on a
+// permission prompt or a question for you).
+let activity = 'idle';
 let unseen = false;  // it finished while you weren't looking
 let focused = false; // the terminal window has focus
-let notifyOn = true; // store key "notify": post a notification when it finishes
+let notifyOn = true; // store key "notify": post a notification when Claude needs you
 
 // Hotkey modifiers, shared by all instances (each adds its slot digit).
 const MODIFIERS = [
@@ -147,7 +149,9 @@ let session = null;
 let sessionSeq = 0;
 
 // Claude Code sets the terminal title (OSC 0) to "<prefix> <title>", where
-// the prefix alternates ◐/◑ while it works and is ✳ when it's idle.
+// the prefix alternates ◐/◑ while it works and is ✳ otherwise. ✳ can mean it
+// finished or that it's waiting on you, so that's settled from its session
+// file (see claudeStatus).
 const TITLE_RE = /\x1b\][02];([^\x07\x1b]*)(?:\x07|\x1b\\)/g;
 
 // Scans output for title changes; returns the unterminated tail to prepend
@@ -165,16 +169,90 @@ function watchTitle(text) {
 }
 
 function onTitle(title) {
-  const working = /^[\u25D0\u25D1]/.test(title);
-  // ✳ after ◐/◑ means Claude finished its turn. Any other title (Claude
-  // exited, the shell took over) just stops the spinner.
-  if (busy && !working && title.startsWith('\u2733')) finished(title.slice(1).trim());
-  setBusy(working);
+  if (/^[\u25D0\u25D1]/.test(title)) return setActivity('busy');
+  // Any other title (Claude exited, the shell took over) clears the state.
+  if (!title.startsWith('\u2733')) return setActivity('idle');
+  // ✳ after ◐/◑: Claude stopped working, either done or waiting on you.
+  if (activity === 'busy') settle(title.slice(1).trim());
+}
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+async function settle(summary) {
+  const s = session;
+  setActivity('idle');
+  // The title changes on render and the session file is written just after,
+  // so give it a moment to catch up.
+  let st = null;
+  for (const ms of [100, 400, 1000]) {
+    await sleep(ms);
+    if (session !== s || activity !== 'idle') return; // working again
+    st = await claudeStatus();
+    if (st?.status !== 'busy') break;
+  }
+  if (session !== s || activity !== 'idle') return;
+  if (isWaiting(st)) {
+    setActivity('waiting');
+    needsYou(st.waitingFor);
+  } else {
+    finished(summary);
+  }
+}
+
+// Claude Code keeps <config>/sessions/<pid>.json current with its status
+// ('busy', 'idle' or 'waiting') and, when waiting, what for ('permission
+// prompt', 'input needed', ...). Finds the one running on this session's
+// terminal; null when there's none.
+function claudeSessionsDir() {
+  return (tjs.env.CLAUDE_CONFIG_DIR || tjs.homeDir + '/.claude') + '/sessions';
+}
+
+async function sessionTty(s) {
+  if (s.tty) return s.tty;
+  const helper = s.proc?.pid;
+  if (!helper) return null;
+  // The helper's child (the shell) has the pty as its controlling terminal.
+  const { text } = await run(['/bin/ps', '-A', '-o', 'ppid=,tty=']);
+  for (const line of text.split('\n')) {
+    const [ppid, tty] = line.trim().split(/\s+/);
+    if (Number(ppid) === helper && tty && tty !== '??') return (s.tty = tty);
+  }
+  return null;
+}
+
+async function claudeStatus() {
+  const s = session;
+  const tty = s && !s.exited && (await sessionTty(s));
+  if (!tty) return null;
+  const { text } = await run(['/bin/ps', '-t', tty, '-o', 'pid=']);
+  let found = null;
+  for (const pid of text.split(/\s+/).filter(Boolean)) {
+    try {
+      const st = JSON.parse(new TextDecoder().decode(await tjs.readFile(`${claudeSessionsDir()}/${pid}.json`)));
+      if (!found || (st.updatedAt || 0) > (found.updatedAt || 0)) found = st;
+    } catch {}
+  }
+  return found;
+}
+
+// 'dialog open' is a dialog you opened yourself (/config and the like).
+function isWaiting(st) {
+  return st?.status === 'waiting' && st.waitingFor !== 'dialog open';
+}
+
+// While waiting, the title stays ✳ even if you dismiss the prompt, so watch
+// the file for Claude to move on.
+let waitTimer = null;
+async function checkWaiting() {
+  const st = await claudeStatus();
+  if (activity !== 'waiting') return;
+  if (isWaiting(st)) waitTimer = setTimeout(checkWaiting, 1000);
+  else setActivity(st?.status === 'busy' ? 'busy' : 'idle');
 }
 
 function startSession(rows, cols) {
   session?.kill();
-  setBusy(false);
+  setActivity('idle');
   const id = ++sessionSeq;
   const shell = tjs.env.SHELL || '/bin/zsh';
   // A plain login shell (interactive: it's on a tty). A custom command runs
@@ -258,7 +336,7 @@ function startSession(rows, cols) {
     flush();
     const st = await exited;
     s.exited = true;
-    if (session === s) setBusy(false);
+    if (session === s) setActivity('idle');
     if (session === s) app.push('pty-exit', { session: id, code: st.exit_status, signal: st.term_signal });
   })().catch((e) => {
     s.exited = true;
@@ -357,7 +435,7 @@ function trayMenu() {
     { separator: true },
     { id: 'restart', label: 'Restart Session' },
     { id: 'pin', label: 'Keep Open When Unfocused', checked: pinned },
-    { id: 'notify', label: 'Notify When Claude Finishes', checked: notifyOn },
+    { id: 'notify', label: 'Notify When Claude Needs You', checked: notifyOn },
     {
       label: 'Hotkey',
       submenu: MODIFIERS.map((m) => ({
@@ -382,17 +460,20 @@ const SPINNER = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', 
 let spinFrame = 0;
 let spinTimer = null;
 
-function setBusy(value) {
-  if (value === busy) return;
-  busy = value;
+function setActivity(value) {
+  if (value === activity) return;
+  activity = value;
   clearInterval(spinTimer);
   spinTimer = null;
-  if (busy) {
+  clearTimeout(waitTimer);
+  waitTimer = null;
+  if (activity === 'busy') {
     spinTimer = setInterval(() => {
       spinFrame = (spinFrame + 1) % SPINNER.length;
       refreshTray();
     }, 150);
   }
+  if (activity === 'waiting') waitTimer = setTimeout(checkWaiting, 1000);
   refreshTray();
 }
 
@@ -406,23 +487,44 @@ function notificationId(n) {
   return `done:${n}`;
 }
 
-// Claude finished a turn. If you weren't looking, mark the tray icon and
-// post a notification; clicking it opens this instance.
-async function finished(summary) {
-  if (focused && (await visible())) return;
-  setUnseen(true);
+async function looking() {
+  return focused && (await visible());
+}
+
+// Clicking the notification opens this instance.
+function notify(body) {
   if (!notifyOn) return;
   app.notify({
     id: notificationId(slot),
     title: `codebar ${slot} · ${folderName(cwd)}`,
-    body: summary ? `Claude finished: ${summary}` : 'Claude finished and is waiting for you',
+    body,
     sound: true,
   });
 }
 
+// Claude finished a turn. If you weren't looking, mark the tray icon and
+// post a notification.
+async function finished(summary) {
+  if (await looking()) return;
+  setUnseen(true);
+  notify(summary ? `Claude finished: ${summary}` : 'Claude finished and is waiting for you');
+}
+
+// Claude stopped on a permission prompt or a question. The tray shows ? for
+// as long as that lasts; the notification only goes out if you weren't looking.
+async function needsYou(waitingFor) {
+  if (await looking()) return;
+  notify(
+    waitingFor === 'permission prompt' ? 'Claude needs your permission'
+      : waitingFor === 'input needed' ? 'Claude has a question for you'
+        : 'Claude is waiting for you',
+  );
+}
+
 function trayTitle() {
-  if (busy) return `${slot} ${SPINNER[spinFrame]}`;
-  if (unseen) return `${slot} \u25CF`;
+  if (activity === 'busy') return `${slot} ${SPINNER[spinFrame]}`;
+  if (activity === 'waiting') return `${slot} ?`;
+  if (unseen) return `${slot} \u2713`;
   return String(slot);
 }
 
