@@ -113,3 +113,30 @@ main {
 }
 #exited[hidden] { display: none; }
 #exited button { background: var(--accent); color: #fff; padding: 3px 10px; }
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(22, 24, 29, .7);
+  backdrop-filter: blur(6px);
+  border-radius: 10px;
+}
+.overlay[hidden] { display: none; }
+.aboutBox {
+  width: 280px;
+  padding: 24px 20px 18px;
+  text-align: center;
+  background: var(--bar);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, .4);
+}
+.aboutBox h2 { font-size: 15px; margin: 10px 0 2px; }
+.aboutBox p { margin: 12px 0; line-height: 1.4; }
+.aboutBox a { color: var(--accent); }
+.aboutBox button { background: var(--accent); color: #fff; padding: 4px 14px; }
+.logo { width: 34px; height: 34px; fill: none; stroke: var(--accent); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.muted { color: var(--muted); }

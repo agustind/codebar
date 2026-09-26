@@ -71,10 +71,13 @@ tiny.api.on('session-reset', ({ cwd }) => {
 
 tiny.api.on('focus-terminal', () => requestAnimationFrame(() => {
   fit.fit();
-  term.focus();
+  if ($('about').hidden) term.focus();
+  else $('aboutClose').focus();
 }));
 
 tiny.api.on('pinned', ({ value }) => $('pin').classList.toggle('on', value));
+
+tiny.api.on('about', () => showAbout(true));
 
 // ---- input --------------------------------------------------------------
 
@@ -90,6 +93,10 @@ term.onResize(({ rows, cols }) => call('resize', { rows, cols }));
 
 term.attachCustomKeyEventHandler((e) => {
   if (e.type !== 'keydown') return true;
+  if (e.key === 'Escape' && !$('about').hidden) {
+    showAbout(false);
+    return false;
+  }
   // Shift+Enter = newline in Claude Code (what /terminal-setup configures
   // elsewhere): send ESC+CR, the same as Option+Enter.
   if (e.key === 'Enter' && e.shiftKey && !e.metaKey && !e.ctrlKey) {
@@ -143,6 +150,22 @@ async function restart() {
   term.focus();
 }
 
+function showAbout(show) {
+  $('about').hidden = !show;
+  if (show) $('aboutClose').focus();
+  else term.focus();
+}
+
+$('aboutClose').onclick = () => showAbout(false);
+$('about').onclick = (e) => { if (e.target === $('about')) showAbout(false); };
+$('about').onkeydown = (e) => { if (e.key === 'Escape') showAbout(false); };
+document.querySelectorAll('[data-url]').forEach((a) => {
+  a.onclick = (e) => {
+    e.preventDefault();
+    call('openUrl', { url: a.dataset.url });
+  };
+});
+
 $('folder').onclick = chooseFolder;
 $('restart').onclick = restart;
 $('add').onclick = () => call('newInstance');
@@ -166,6 +189,7 @@ new ResizeObserver(() => fit.fit()).observe($('term'));
   $('pin').classList.toggle('on', r.pinned);
   if (r.hotkey) $('hotkey').textContent = '⌃⌥' + r.hotkey.split('+').pop();
   showFolder(r.cwd);
+  $('aboutVersion').textContent = 'Version ' + r.version;
   document.title = `codebar ${r.slot}`;
   if (r.replay) term.write(r.replay);
   if (r.exited) {

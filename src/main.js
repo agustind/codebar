@@ -296,6 +296,7 @@ function trayMenu() {
     { id: 'restart', label: 'Restart Session' },
     { id: 'pin', label: 'Keep Open When Unfocused', checked: pinned },
     { separator: true },
+    { id: 'about', label: 'About codebar' },
     { id: 'quit', label: slot > 1 ? `Quit Instance ${slot}` : 'Quit Instance' },
     { id: 'quitAll', label: 'Quit All Instances' },
   ];
@@ -359,6 +360,7 @@ export const api = {
       slot, cwd, pinned,
       folder: folderName(cwd),
       hotkey: hotkeyCombo(),
+      version: app.info.version,
     };
   },
 
@@ -446,6 +448,10 @@ export function onTray(id, a) {
     pinned = !pinned;
     app.push('pinned', { value: pinned });
     return refreshTray();
+  }
+  if (id === 'about') {
+    app.push('about', null);
+    return showWindow();
   }
   if (id === 'quit') return quit();
   if (id === 'quitAll') return quitAll();

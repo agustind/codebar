@@ -28,6 +28,17 @@
   <button id="restart">Restart ↵</button>
 </div>
 
+<div class="overlay" id="about" hidden>
+  <div class="aboutBox">
+    <svg class="logo" viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="4" width="20" height="16" rx="3"/><path d="m6.5 9 3 3-3 3M11.5 15h5"/></svg>
+    <h2>codebar</h2>
+    <div class="muted" id="aboutVersion"></div>
+    <p>A menu-bar terminal for running Claude Code, one instance per project.</p>
+    <p>Made by <a href="#" data-url="https://dondo.dev">dondo.dev</a></p>
+    <button id="aboutClose">Close</button>
+  </div>
+</div>
+
 <script src="vendor/xterm.js"></script>
 <script src="vendor/addon-fit.js"></script>
 <script src="vendor/addon-web-links.js"></script>
