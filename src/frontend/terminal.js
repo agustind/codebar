@@ -79,6 +79,8 @@ tiny.api.on('pinned', ({ value }) => $('pin').classList.toggle('on', value));
 
 tiny.api.on('about', () => showAbout(true));
 
+tiny.api.on('hotkey', ({ label }) => { $('hotkey').textContent = label || ''; });
+
 // ---- input --------------------------------------------------------------
 
 term.onData((data) => {
@@ -187,7 +189,7 @@ new ResizeObserver(() => fit.fit()).observe($('term'));
   session = r.session;
   $('slot').textContent = r.slot;
   $('pin').classList.toggle('on', r.pinned);
-  if (r.hotkey) $('hotkey').textContent = '⌃⌥' + r.hotkey.split('+').pop();
+  $('hotkey').textContent = r.hotkey || '';
   showFolder(r.cwd);
   $('aboutVersion').textContent = 'Version ' + r.version;
   document.title = `codebar ${r.slot}`;

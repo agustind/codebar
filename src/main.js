@@ -4,7 +4,8 @@
 // one tray icon, so "New Instance" launches another copy of the app (open -n
 // for the packaged .app, a re-exec of the backend under `tinyjs dev`). Each
 // copy claims the lowest free slot number via a pid file, and the slot picks
-// its hotkey (ctrl+alt+<slot>) and its remembered working directory.
+// its hotkey (<modifiers>+<slot>, ctrl+alt by default) and its remembered
+// working directory.
 
 const enc = new TextEncoder();
 
@@ -20,6 +21,15 @@ let pinned = false;
 let cwd = tjs.homeDir;
 let command = null; // store key "command": run this instead of a plain shell
 let busy = false;    // Claude Code in this session is working
+
+// Hotkey modifiers, shared by all instances (each adds its slot digit).
+const MODIFIERS = [
+  { id: 'ctrl+alt', symbols: '⌃⌥' },
+  { id: 'cmd+alt', symbols: '⌘⌥' },
+  { id: 'ctrl+shift', symbols: '⌃⇧' },
+  { id: 'ctrl+cmd', symbols: '⌃⌘' },
+];
+let modifiers = MODIFIERS[0];
 
 // ---- process helpers ----------------------------------------------------
 
@@ -284,17 +294,65 @@ async function toggleWindow() {
 // ---- tray ---------------------------------------------------------------
 
 function hotkeyCombo() {
-  return slot <= MAX_SLOTS ? `ctrl+alt+${slot}` : null;
+  return slot <= MAX_SLOTS ? `${modifiers.id}+${slot}` : null;
+}
+
+function hotkeyLabel() {
+  return slot <= MAX_SLOTS ? modifiers.symbols + slot : null;
+}
+
+// The choice lives in its own file rather than the store so other instances
+// can re-read it when signalled.
+function modifiersFile() {
+  return app.paths.data + '/hotkey-modifiers';
+}
+
+async function loadModifiers() {
+  try {
+    const id = new TextDecoder().decode(await tjs.readFile(modifiersFile())).trim();
+    return MODIFIERS.find((m) => m.id === id) || MODIFIERS[0];
+  } catch {
+    return MODIFIERS[0];
+  }
+}
+
+async function applyModifiers(m) {
+  if (m === modifiers) return;
+  app.hotkey.unregister('toggle');
+  modifiers = m;
+  const hk = hotkeyCombo();
+  if (hk) app.hotkey.register('toggle', hk);
+  refreshTray();
+  app.push('hotkey', { label: hotkeyLabel() });
+}
+
+async function setModifiers(id) {
+  const m = MODIFIERS.find((m) => m.id === id);
+  if (!m) return;
+  await tjs.writeFile(modifiersFile(), enc.encode(m.id));
+  await applyModifiers(m);
+  // Tell the other instances to pick up the new file.
+  for (const [n, pid] of await readSlots()) {
+    if (pid !== tjs.pid) await run(['/bin/kill', '-USR1', String(pid)]);
+  }
 }
 
 function trayMenu() {
-  const hk = hotkeyCombo();
+  const hk = hotkeyLabel();
   return [
-    { id: 'toggle', label: `Show / Hide${hk ? '   (⌃⌥' + slot + ')' : ''}` },
+    { id: 'toggle', label: `Show / Hide${hk ? '   (' + hk + ')' : ''}` },
     { id: 'new', label: 'New Instance' },
     { separator: true },
     { id: 'restart', label: 'Restart Session' },
     { id: 'pin', label: 'Keep Open When Unfocused', checked: pinned },
+    {
+      label: 'Hotkey',
+      submenu: MODIFIERS.map((m) => ({
+        id: 'mods:' + m.id,
+        label: `${m.symbols}1 … ${m.symbols}9`,
+        checked: m === modifiers,
+      })),
+    },
     { separator: true },
     { id: 'about', label: 'About codebar' },
     { id: 'quit', label: slot > 1 ? `Quit Instance ${slot}` : 'Quit Instance' },
@@ -359,7 +417,7 @@ export const api = {
       exited: session.exited,
       slot, cwd, pinned,
       folder: folderName(cwd),
-      hotkey: hotkeyCombo(),
+      hotkey: hotkeyLabel(),
       version: app.info.version,
     };
   },
@@ -422,6 +480,7 @@ export async function init(a) {
   cwd = (await app.store.get(`cwd.${slot}`)) || tjs.homeDir;
   if (!(await exists(cwd))) cwd = tjs.homeDir;
   command = await app.store.get('command');
+  modifiers = await loadModifiers();
 
   const w = win();
   app.setHideOnClose(true);
@@ -435,6 +494,7 @@ export async function init(a) {
   for (const sig of ['SIGTERM', 'SIGINT', 'SIGHUP']) {
     try { tjs.addSignalListener(sig, () => quit()); } catch {}
   }
+  try { tjs.addSignalListener('SIGUSR1', async () => applyModifiers(await loadModifiers())); } catch {}
 }
 
 export function onTray(id, a) {
@@ -453,6 +513,7 @@ export function onTray(id, a) {
     app.push('about', null);
     return showWindow();
   }
+  if (id?.startsWith('mods:')) return setModifiers(id.slice(5));
   if (id === 'quit') return quit();
   if (id === 'quitAll') return quitAll();
 }
