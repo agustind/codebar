@@ -21,6 +21,9 @@ let pinned = false;
 let cwd = tjs.homeDir;
 let command = null; // store key "command": run this instead of a plain shell
 let busy = false;    // Claude Code in this session is working
+let unseen = false;  // it finished while you weren't looking
+let focused = false; // the terminal window has focus
+let notifyOn = true; // store key "notify": post a notification when it finishes
 
 // Hotkey modifiers, shared by all instances (each adds its slot digit).
 const MODIFIERS = [
@@ -156,9 +159,17 @@ function watchTitle(text) {
     title = m[1];
     end = m.index + m[0].length;
   }
-  if (title !== null) setBusy(/^[\u25D0\u25D1]/.test(title));
+  if (title !== null) onTitle(title);
   const open = text.lastIndexOf('\x1b]');
   return open >= end && text.length - open < 1024 ? text.slice(open) : '';
+}
+
+function onTitle(title) {
+  const working = /^[\u25D0\u25D1]/.test(title);
+  // ✳ after ◐/◑ means Claude finished its turn. Any other title (Claude
+  // exited, the shell took over) just stops the spinner.
+  if (busy && !working && title.startsWith('\u2733')) finished(title.slice(1).trim());
+  setBusy(working);
 }
 
 function startSession(rows, cols) {
@@ -281,6 +292,7 @@ async function placeUnderTray() {
 }
 
 async function showWindow() {
+  setUnseen(false);
   await placeUnderTray();
   win().show();
   app.push('focus-terminal', {});
@@ -345,6 +357,7 @@ function trayMenu() {
     { separator: true },
     { id: 'restart', label: 'Restart Session' },
     { id: 'pin', label: 'Keep Open When Unfocused', checked: pinned },
+    { id: 'notify', label: 'Notify When Claude Finishes', checked: notifyOn },
     {
       label: 'Hotkey',
       submenu: MODIFIERS.map((m) => ({
@@ -383,10 +396,40 @@ function setBusy(value) {
   refreshTray();
 }
 
+function setUnseen(value) {
+  if (value === unseen) return;
+  unseen = value;
+  refreshTray();
+}
+
+function notificationId(n) {
+  return `done:${n}`;
+}
+
+// Claude finished a turn. If you weren't looking, mark the tray icon and
+// post a notification; clicking it opens this instance.
+async function finished(summary) {
+  if (focused && (await visible())) return;
+  setUnseen(true);
+  if (!notifyOn) return;
+  app.notify({
+    id: notificationId(slot),
+    title: `codebar ${slot} · ${folderName(cwd)}`,
+    body: summary ? `Claude finished: ${summary}` : 'Claude finished and is waiting for you',
+    sound: true,
+  });
+}
+
+function trayTitle() {
+  if (busy) return `${slot} ${SPINNER[spinFrame]}`;
+  if (unseen) return `${slot} \u25CF`;
+  return String(slot);
+}
+
 function refreshTray() {
   app.tray.set({
     icon: 'sf:apple.terminal',
-    title: busy ? `${slot} ${SPINNER[spinFrame]}` : String(slot),
+    title: trayTitle(),
     tooltip: `codebar ${slot} — ${folderName(cwd)}`,
     menu: trayMenu(),
     primaryAction: true,
@@ -480,6 +523,10 @@ export async function init(a) {
   cwd = (await app.store.get(`cwd.${slot}`)) || tjs.homeDir;
   if (!(await exists(cwd))) cwd = tjs.homeDir;
   command = await app.store.get('command');
+  notifyOn = (await app.store.get('notify')) !== false;
+  if (notifyOn && (await app.permissions.check('notifications').catch(() => null)) === 'undetermined') {
+    app.permissions.request('notifications').catch(() => {});
+  }
   modifiers = await loadModifiers();
 
   const w = win();
@@ -495,6 +542,8 @@ export async function init(a) {
     try { tjs.addSignalListener(sig, () => quit()); } catch {}
   }
   try { tjs.addSignalListener('SIGUSR1', async () => applyModifiers(await loadModifiers())); } catch {}
+  // Another instance received the click on our notification.
+  try { tjs.addSignalListener('SIGUSR2', () => showWindow()); } catch {}
 }
 
 export function onTray(id, a) {
@@ -513,6 +562,11 @@ export function onTray(id, a) {
     app.push('about', null);
     return showWindow();
   }
+  if (id === 'notify') {
+    notifyOn = !notifyOn;
+    app.store.set('notify', notifyOn);
+    return refreshTray();
+  }
   if (id?.startsWith('mods:')) return setModifiers(id.slice(5));
   if (id === 'quit') return quit();
   if (id === 'quitAll') return quitAll();
@@ -522,7 +576,20 @@ export function onHotkey(id) {
   if (id === 'toggle') toggleWindow();
 }
 
+export async function onNotificationClick(id) {
+  const n = parseInt(String(id).split(':')[1], 10);
+  if (!n || n === slot) return showWindow();
+  // Every instance shares the bundle id, so macOS may hand the click to any
+  // of them: pass it on to the one that posted it.
+  const pid = (await readSlots()).get(n);
+  if (pid) await run(['/bin/kill', '-USR2', String(pid)]);
+}
+
 export function onWindowState(info) {
+  if (info.win === 'main' && typeof info.focused === 'boolean') {
+    focused = info.focused;
+    if (focused) setUnseen(false);
+  }
   // Popover behaviour: clicking elsewhere puts the terminal away.
   if (info.win === 'main' && info.focused === false && !pinned) win().hide();
 }
