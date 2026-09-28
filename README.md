@@ -2,7 +2,7 @@
 
 A macOS menu-bar terminal for running Claude Code.
 
-- **Click** the menu-bar icon, or press **⌃⌥1**, to drop a terminal down under the icon. It opens a plain login shell; `cd` to your project and run `claude` yourself.
+- **Click** the menu-bar icon, or press **⌃⌥1**, to drop a terminal down under the icon. It also drops down on its own when codebar starts. It opens a plain login shell; `cd` to your project and run `claude` yourself.
 - **Run several projects side by side.** Right-click the icon, then **New Instance**, to add another icon with its own terminal and session. The icons are numbered left to right, and the *n*th one toggles with **⌃⌥n**, so you can keep one Claude Code per project in the menu bar. New instances appear on the left (macOS places them there), so the numbers shift as instances come and go.
 - **See what each one is doing.** Next to each instance's number in the menu bar: a spinner while Claude Code is working (`1 ⠹`), `?` while it waits on a permission prompt or a question for you (`1 ?`), and `✓` when it finished while you weren't looking (`1 ✓`, until you open it). The icon of the instance that's open is filled in, so you can tell which terminal you're looking at.
 - **Get told when it needs you.** If Claude finishes, or stops to ask for permission or ask a question, while you're not looking at that terminal, you get a notification (click it to open the instance). Turn the notifications off from the right-click menu under **Notify When Claude Needs You**.

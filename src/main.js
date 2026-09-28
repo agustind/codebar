@@ -765,11 +765,13 @@ export async function init(a) {
   // Another instance received the click on our notification.
   try { tjs.addSignalListener('SIGUSR2', () => showWindow()); } catch {}
 
-  // Our icon just took its place: record it, let the others renumber, then
-  // take our own number and hotkey. Not awaited, so startup doesn't wait on
-  // the icon being placed.
+  // Our icon just took its place: record it, open the terminal under it (an
+  // accessory app launches with its window hidden, so otherwise the only sign
+  // of it is the new icon), let the others renumber, then take our own number
+  // and hotkey. Not awaited, so startup doesn't wait on the icon being placed.
   (async () => {
     await recordPosition();
+    await showWindow();
     await signalOthers();
     await renumber(true);
   })();
