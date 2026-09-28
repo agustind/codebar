@@ -138,5 +138,8 @@ main {
 .aboutBox p { margin: 12px 0; line-height: 1.4; }
 .aboutBox a { color: var(--accent); }
 .aboutBox button { background: var(--accent); color: #fff; padding: 4px 14px; }
+.aboutBox button.secondary { background: var(--line); color: var(--text); }
+.aboutBox .buttons { display: flex; justify-content: center; gap: 8px; }
+.aboutBox kbd { font: inherit; opacity: .6; margin-left: 4px; }
 .logo { width: 34px; height: 34px; fill: none; stroke: var(--accent); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .muted { color: var(--muted); }

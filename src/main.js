@@ -709,7 +709,9 @@ export const api = {
     return pinned;
   },
 
-  async quit() {
+  // While Claude is working or waiting on you, the page asks first.
+  async quit({ force } = {}) {
+    if (!force && (activity === 'busy' || activity === 'waiting')) return { confirm: activity };
     quit();
     return true;
   },

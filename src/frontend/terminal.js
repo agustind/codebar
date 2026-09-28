@@ -116,13 +116,39 @@ addEventListener('dragover', (e) => {
 addEventListener('drop', (e) => e.preventDefault());
 
 // ⌘W quits this instance wherever the focus is (a header button, the About
-// box), not only in the terminal.
+// box), not only in the terminal. While Claude is working or waiting on you
+// it asks first: ↵ quits, esc stays.
 addEventListener('keydown', (e) => {
-  if (!e.metaKey || e.shiftKey || e.altKey || e.ctrlKey || e.key.toLowerCase() !== 'w') return;
+  if (!$('quit').hidden) {
+    if (e.key === 'Enter') quitInstance(true);
+    else if (e.key === 'Escape') showQuitConfirm(null);
+    else return;
+  } else if (e.metaKey && !e.shiftKey && !e.altKey && !e.ctrlKey && e.key.toLowerCase() === 'w') {
+    quitInstance(false);
+  } else {
+    return;
+  }
   e.preventDefault();
   e.stopPropagation();
-  call('quit');
 }, true);
+
+async function quitInstance(force) {
+  const r = await call('quit', { force });
+  if (r?.confirm) showQuitConfirm(r.confirm);
+}
+
+function showQuitConfirm(activity) {
+  $('quit').hidden = !activity;
+  if (!activity) return term.focus();
+  $('quitMsg').textContent = activity === 'waiting'
+    ? 'Claude is waiting for you in this session. Quitting ends it.'
+    : 'Claude is still working in this session. Quitting stops it.';
+  $('quitOk').focus();
+}
+
+$('quitOk').onclick = () => quitInstance(true);
+$('quitCancel').onclick = () => showQuitConfirm(null);
+$('quit').onclick = (e) => { if (e.target === $('quit')) showQuitConfirm(null); };
 
 term.attachCustomKeyEventHandler((e) => {
   if (e.type !== 'keydown') return true;
