@@ -11,23 +11,28 @@ A macOS menu-bar terminal for running Claude Code.
 - **Drag files in** from Finder to paste their paths (images too, for Claude Code). The window stays up while you drag, even though starting the drag takes focus away.
 - The header shows the name of the folder the terminal is in, in capitals (hover for the full path), and follows `cd`. **⌘O** (or click the name) restarts the session in a new directory. Each instance slot remembers its own folder.
 
-Keys inside the terminal: ⇧↩ newline · ⌘C copy selection · ⌘V paste · ⌘K clear · ⌘N new instance · ⌘+/⌘−/⌘0 zoom. **⌘W** quits the instance from anywhere in its window; if Claude is working or waiting on you it asks first (↵ quit, esc cancel).
+Keys inside the terminal: ⇧↩ newline · ⌘-click a link to open it · ⌘C copy selection · ⌘V paste · ⌘K clear · ⌘N new instance · ⌘+/⌘−/⌘0 zoom. **⌘W** quits the instance from anywhere in its window; if Claude is working or waiting on you it asks first (↵ quit, esc cancel).
 
 ## Develop
 
+A native AppKit app in Swift; the terminal is [SwiftTerm](https://github.com/migueldeicaza/SwiftTerm).
+
 ```sh
-./build-helper.sh   # only after editing native/pty-helper.c
-tinyjs dev
-tinyjs build        # dist/codebar.app
+swift run                 # debug build, straight from the terminal
+./build.sh                # dist/codebar.app (universal, signed)
+./build.sh release        # also notarizes it and makes dist/codebar-<version>.dmg
 ```
+
+The version lives in `VERSION`. Building needs Xcode's Metal toolchain for SwiftTerm's shaders (`xcodebuild -downloadComponent MetalToolchain`), and releasing needs the `dondo` notarytool keychain profile.
 
 ## How it works
 
-- `native/pty-helper.c`: txiki.js can only spawn processes over pipes, so this small helper `forkpty`s the shell and relays its output on stdout. Keystrokes and resize events arrive as framed messages on a FIFO, because txiki's spawn stdin stalls after its first write.
-- `src/main.js`: the backend. It owns the tray icon, the hotkey, window placement (`tray.position()`), and the pty session. It keeps 512 KB of scrollback that gets replayed if the page reloads.
-- `src/frontend/`: xterm.js (vendored in `vendor/`).
-- Current folder: while output is quiet, the helper reports the foreground process's working directory as an OSC 7 sequence, which the page shows in the header.
-- Activity: Claude Code sets the terminal title to `◐`/`◑ <title>` while it works and `✳ <title>` otherwise. The backend watches for that and animates the tray title. It won't show if `CLAUDE_CODE_DISABLE_TERMINAL_TITLE` is set.
-- Done or waiting: `✳` looks the same either way, so when the spinner stops the backend reads `~/.claude/sessions/<pid>.json` (the file Claude Code keeps with its `status` and `waitingFor`) for the Claude process on that instance's tty. `waiting` shows `?`; anything else counts as done.
-- Multiple instances: tinyjs allows one tray icon per process, so each instance is its own process. The packaged app uses `open -n`; `tinyjs dev` re-runs the backend. Each process claims a slot (`~/Library/Application Support/app.codebar/instances/<n>.pid`), which keeps its remembered folder, and records its icon's x in `<n>.x`. The icons are numbered by x, and an instance sends `SIGUSR1` to the others when it starts or quits so they renumber and move their hotkeys.
+- `Sources/codebar/AppDelegate.swift`: the instances, numbering, hotkeys (Carbon `RegisterEventHotKey`) and notifications. All instances live in one process, each with its own `NSStatusItem`, window and shell.
+- `Sources/codebar/Instance.swift`: one instance: its menu-bar icon, the dropdown window and its placement under the icon, and the shell session (SwiftTerm's `LocalProcessTerminalView`, which runs it in a real pty).
+- `Sources/codebar/Views.swift`: the window's contents: header, exited bar, About and quit boxes, file drops.
+- Current folder: every half second the header reads the working directory of the terminal's foreground process (`proc_pidinfo`), so it follows `cd`. OSC 7 from the shell works too.
+- Activity: Claude Code sets the terminal title to `◐`/`◑ <title>` while it works and `✳ <title>` otherwise. codebar watches for that and animates the menu-bar title. It won't show if `CLAUDE_CODE_DISABLE_TERMINAL_TITLE` is set.
+- Done or waiting: `✳` looks the same either way, so when the spinner stops codebar reads `~/.claude/sessions/<pid>.json` (the file Claude Code keeps with its `status` and `waitingFor`) for the Claude process on that instance's tty. `waiting` shows `?`; anything else counts as done.
+- Numbering: macOS puts each new menu-bar icon on the left, so the icons are numbered by where they sit (⌘-dragging one renumbers too), and each hotkey follows its number. Each instance also has a slot (the lowest free one when it starts), which keeps its remembered folder.
+- Settings live in `~/Library/Application Support/app.codebar/`: `store.json` (each slot's folder as `cwd.<n>`, `notify`) and `hotkey-modifiers`.
 - Custom startup command: set the `store.json` key `command` (for example `claude`). By default there isn't one, so you get a plain shell.
