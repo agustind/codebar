@@ -709,8 +709,8 @@ export const api = {
     return pinned;
   },
 
-  async hide() {
-    hideWindow();
+  async quit() {
+    quit();
     return true;
   },
 
