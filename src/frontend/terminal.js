@@ -100,6 +100,15 @@ tiny.win.onDrop((paths) => {
   call('dropped');
 });
 
+// The launcher reports the paths and then hands the drop on to WebKit, which
+// navigates the whole window to the file (an image fills it) unless the page
+// takes the drop itself.
+addEventListener('dragover', (e) => {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'copy';
+});
+addEventListener('drop', (e) => e.preventDefault());
+
 term.attachCustomKeyEventHandler((e) => {
   if (e.type !== 'keydown') return true;
   if (e.key === 'Escape' && !$('about').hidden) {
