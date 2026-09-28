@@ -3,7 +3,7 @@
   "title": "codebar",
   "size": "760x480",
   "id": "app.codebar",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "minTinyjsVersion": "0.34.0",
   "activation": "accessory",
   "contextMenu": false,

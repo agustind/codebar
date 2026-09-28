@@ -147,9 +147,11 @@ function zoom(dir) {
 
 // ---- header -------------------------------------------------------------
 
+// Just the folder's name, in capitals so you can tell instances apart at a
+// glance; the full path is in the tooltip.
 function showFolder(cwd) {
-  const home = cwd.match(/^\/Users\/[^/]+/)?.[0];
-  $('folder').textContent = home && cwd.startsWith(home) ? '~' + cwd.slice(home.length) : cwd;
+  const name = /^\/Users\/[^/]+\/?$/.test(cwd) ? '~' : cwd.split('/').filter(Boolean).pop() || '/';
+  $('folder').textContent = name.toUpperCase();
   $('folder').title = cwd + ' — change folder (⌘O)';
 }
 
