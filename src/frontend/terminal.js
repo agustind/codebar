@@ -79,7 +79,13 @@ tiny.api.on('pinned', ({ value }) => $('pin').classList.toggle('on', value));
 
 tiny.api.on('about', () => showAbout(true));
 
-tiny.api.on('hotkey', ({ label }) => { $('hotkey').textContent = label || ''; });
+// The icons are numbered left to right, so the number moves when instances
+// come and go.
+tiny.api.on('hotkey', ({ label, num }) => {
+  $('hotkey').textContent = label || '';
+  $('slot').textContent = num;
+  document.title = `codebar ${num}`;
+});
 
 // ---- input --------------------------------------------------------------
 

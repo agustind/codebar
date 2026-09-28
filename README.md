@@ -3,10 +3,10 @@
 A macOS menu-bar terminal for running Claude Code.
 
 - **Click** the menu-bar icon, or press **⌃⌥1**, to drop a terminal down under the icon. It opens a plain login shell; `cd` to your project and run `claude` yourself.
-- **Run several projects side by side.** Right-click the icon, then **New Instance**, to add another icon with its own terminal and session. Instance *n* is labelled `n` and toggles with **⌃⌥n**, so you can keep one Claude Code per project in the menu bar.
+- **Run several projects side by side.** Right-click the icon, then **New Instance**, to add another icon with its own terminal and session. The icons are numbered left to right, and the *n*th one toggles with **⌃⌥n**, so you can keep one Claude Code per project in the menu bar. New instances appear on the left (macOS places them there), so the numbers shift as instances come and go.
 - **See what each one is doing.** Next to each instance's number in the menu bar: a spinner while Claude Code is working (`1 ⠹`), `?` while it waits on a permission prompt or a question for you (`1 ?`), and `✓` when it finished while you weren't looking (`1 ✓`, until you open it). The icon of the instance that's open is filled in, so you can tell which terminal you're looking at.
 - **Get told when it needs you.** If Claude finishes, or stops to ask for permission or ask a question, while you're not looking at that terminal, you get a notification (click it to open the instance). Turn the notifications off from the right-click menu under **Notify When Claude Needs You**.
-- **Change the hotkey** from the right-click menu under **Hotkey**: ⌃⌥, ⌘⌥, ⌃⇧ or ⌃⌘ plus the instance number. It applies to every instance.
+- **Change the hotkey** from the right-click menu under **Hotkey**: ⌃⌥, ⌘⌥, ⌃⇧ or ⌃⌘ plus the icon's number. It applies to every instance.
 - The window hides when it loses focus. Pin it (📌 in the header, or from the right-click menu) to keep it open.
 - **Drag files in** from Finder to paste their paths (images too, for Claude Code). The window stays up while you drag, even though starting the drag takes focus away.
 - The header shows the name of the folder the terminal is in, in capitals (hover for the full path), and follows `cd`. **⌘O** (or click the name) restarts the session in a new directory. Each instance slot remembers its own folder.
@@ -29,5 +29,5 @@ tinyjs build        # dist/codebar.app
 - Current folder: while output is quiet, the helper reports the foreground process's working directory as an OSC 7 sequence, which the page shows in the header.
 - Activity: Claude Code sets the terminal title to `◐`/`◑ <title>` while it works and `✳ <title>` otherwise. The backend watches for that and animates the tray title. It won't show if `CLAUDE_CODE_DISABLE_TERMINAL_TITLE` is set.
 - Done or waiting: `✳` looks the same either way, so when the spinner stops the backend reads `~/.claude/sessions/<pid>.json` (the file Claude Code keeps with its `status` and `waitingFor`) for the Claude process on that instance's tty. `waiting` shows `?`; anything else counts as done.
-- Multiple instances: tinyjs allows one tray icon per process, so each instance is its own process. The packaged app uses `open -n`; `tinyjs dev` re-runs the backend. Each process claims a slot (`~/Library/Application Support/app.codebar/instances/<n>.pid`).
+- Multiple instances: tinyjs allows one tray icon per process, so each instance is its own process. The packaged app uses `open -n`; `tinyjs dev` re-runs the backend. Each process claims a slot (`~/Library/Application Support/app.codebar/instances/<n>.pid`), which keeps its remembered folder, and records its icon's x in `<n>.x`. The icons are numbered by x, and an instance sends `SIGUSR1` to the others when it starts or quits so they renumber and move their hotkeys.
 - Custom startup command: set the `store.json` key `command` (for example `claude`). By default there isn't one, so you get a plain shell.

@@ -4,8 +4,9 @@
 // one tray icon, so "New Instance" launches another copy of the app (open -n
 // for the packaged .app, a re-exec of the backend under `tinyjs dev`). Each
 // copy claims the lowest free slot number via a pid file, and the slot picks
-// its hotkey (<modifiers>+<slot>, ctrl+alt by default) and its remembered
-// working directory.
+// its remembered working directory. The number shown on the icon, and its
+// hotkey (<modifiers>+<number>, ctrl+alt by default), come from where the
+// icon sits instead: the leftmost is 1.
 
 const enc = new TextEncoder();
 
@@ -15,8 +16,10 @@ const SCROLLBACK_BYTES = 512 * 1024; // replayed to the page after a reload
 const MAX_SLOTS = 9;
 
 let app;
-let slot = 1;
+let slot = 1; // stable for the process: pid file, remembered folder, notifications
+let num = 1;  // shown on the icon and used for the hotkey: its place from the left
 let slotFile = null;
+let hotkeyTimer = null;
 let pinned = false;
 let cwd = tjs.homeDir;
 let command = null; // store key "command": run this instead of a plain shell
@@ -28,7 +31,7 @@ let focused = false; // the terminal window has focus
 let open = false;    // the terminal window is showing (its tray icon fills in)
 let notifyOn = true; // store key "notify": post a notification when Claude needs you
 
-// Hotkey modifiers, shared by all instances (each adds its slot digit).
+// Hotkey modifiers, shared by all instances (each adds its icon's number).
 const MODIFIERS = [
   { id: 'ctrl+alt', symbols: '⌃⌥' },
   { id: 'cmd+alt', symbols: '⌘⌥' },
@@ -77,16 +80,80 @@ async function claimSlot() {
   const taken = await readSlots();
   for (let n = 1; n <= MAX_SLOTS; n++) {
     if (taken.has(n)) continue;
-    slot = n;
+    slot = num = n;
     slotFile = `${slotsDir()}/${n}.pid`;
     await tjs.writeFile(slotFile, enc.encode(String(tjs.pid)));
     return;
   }
-  slot = MAX_SLOTS + 1; // everything taken: run unnumbered, remember nothing
+  slot = num = MAX_SLOTS + 1; // everything taken: run unnumbered, remember nothing
 }
 
 async function releaseSlot() {
-  if (slotFile) await tjs.remove(slotFile).catch(() => {});
+  if (!slotFile) return;
+  await tjs.remove(slotFile).catch(() => {});
+  await tjs.remove(positionFile(slot)).catch(() => {});
+}
+
+// Wake the other instances to re-read the shared state (hotkey modifiers and
+// icon positions).
+async function signalOthers() {
+  for (const pid of (await readSlots()).values()) {
+    if (pid !== tjs.pid) await run(['/bin/kill', '-USR1', String(pid)]);
+  }
+}
+
+// ---- icon order ---------------------------------------------------------
+
+// macOS puts each new menu-bar icon to the left of the ones already there, so
+// slots run right to left. Each instance records its icon's x next to its pid
+// file, and the icons are numbered by that, left to right.
+
+function positionFile(n) {
+  return `${slotsDir()}/${n}.x`;
+}
+
+async function recordPosition() {
+  // Right after tray.set the icon may not be placed yet.
+  for (let i = 0; i < 20; i++) {
+    const t = await app.tray.position().catch(() => null);
+    if (t) {
+      await tjs.writeFile(positionFile(slot), enc.encode(String(t.x)));
+      return;
+    }
+    await sleep(100);
+  }
+}
+
+async function renumber(force = false) {
+  if (!slotFile) return;
+  await recordPosition();
+  const xs = [];
+  for (const n of (await readSlots()).keys()) {
+    try {
+      xs.push([n, parseFloat(new TextDecoder().decode(await tjs.readFile(positionFile(n))))]);
+    } catch {} // not placed yet: it signals once it is
+  }
+  xs.sort((a, b) => a[1] - b[1]);
+  const i = xs.findIndex(([n]) => n === slot);
+  setNumber(i < 0 ? slot : i + 1, force);
+}
+
+function setNumber(n, force) {
+  if (n === num && !force) return;
+  app.hotkey.unregister('toggle');
+  num = n;
+  refreshTray();
+  app.push('hotkey', { label: hotkeyLabel(), num });
+  // The other instances shift at the same time: give whoever held this combo
+  // a moment to let go of it.
+  clearTimeout(hotkeyTimer);
+  hotkeyTimer = setTimeout(registerHotkey, 300);
+}
+
+function registerHotkey() {
+  app.hotkey.unregister('toggle');
+  const hk = hotkeyCombo();
+  if (hk) app.hotkey.register('toggle', hk);
 }
 
 async function spawnInstance() {
@@ -116,6 +183,7 @@ async function quitAll() {
 async function quit() {
   session?.kill();
   await releaseSlot();
+  await signalOthers();
   app.quit();
 }
 
@@ -428,11 +496,11 @@ async function hideOnBlur() {
 // ---- tray ---------------------------------------------------------------
 
 function hotkeyCombo() {
-  return slot <= MAX_SLOTS ? `${modifiers.id}+${slot}` : null;
+  return num <= MAX_SLOTS ? `${modifiers.id}+${num}` : null;
 }
 
 function hotkeyLabel() {
-  return slot <= MAX_SLOTS ? modifiers.symbols + slot : null;
+  return num <= MAX_SLOTS ? modifiers.symbols + num : null;
 }
 
 // The choice lives in its own file rather than the store so other instances
@@ -452,12 +520,10 @@ async function loadModifiers() {
 
 async function applyModifiers(m) {
   if (m === modifiers) return;
-  app.hotkey.unregister('toggle');
   modifiers = m;
-  const hk = hotkeyCombo();
-  if (hk) app.hotkey.register('toggle', hk);
+  registerHotkey();
   refreshTray();
-  app.push('hotkey', { label: hotkeyLabel() });
+  app.push('hotkey', { label: hotkeyLabel(), num });
 }
 
 async function setModifiers(id) {
@@ -466,9 +532,7 @@ async function setModifiers(id) {
   await tjs.writeFile(modifiersFile(), enc.encode(m.id));
   await applyModifiers(m);
   // Tell the other instances to pick up the new file.
-  for (const [n, pid] of await readSlots()) {
-    if (pid !== tjs.pid) await run(['/bin/kill', '-USR1', String(pid)]);
-  }
+  await signalOthers();
 }
 
 function trayMenu() {
@@ -490,7 +554,7 @@ function trayMenu() {
     },
     { separator: true },
     { id: 'about', label: 'About codebar' },
-    { id: 'quit', label: slot > 1 ? `Quit Instance ${slot}` : 'Quit Instance' },
+    { id: 'quit', label: num > 1 ? `Quit Instance ${num}` : 'Quit Instance' },
     { id: 'quitAll', label: 'Quit All Instances' },
   ];
 }
@@ -540,7 +604,7 @@ function notify(body) {
   if (!notifyOn) return;
   app.notify({
     id: notificationId(slot),
-    title: `codebar ${slot} · ${folderName(cwd)}`,
+    title: `codebar ${num} · ${folderName(cwd)}`,
     body,
     sound: true,
   });
@@ -566,17 +630,17 @@ async function needsYou(waitingFor) {
 }
 
 function trayTitle() {
-  if (activity === 'busy') return `${slot} ${SPINNER[spinFrame]}`;
-  if (activity === 'waiting') return `${slot} ?`;
-  if (unseen) return `${slot} \u2713`;
-  return String(slot);
+  if (activity === 'busy') return `${num} ${SPINNER[spinFrame]}`;
+  if (activity === 'waiting') return `${num} ?`;
+  if (unseen) return `${num} \u2713`;
+  return String(num);
 }
 
 function refreshTray() {
   app.tray.set({
     icon: open ? 'sf:apple.terminal.fill' : 'sf:apple.terminal',
     title: trayTitle(),
-    tooltip: `codebar ${slot} — ${folderName(cwd)}`,
+    tooltip: `codebar ${num} — ${folderName(cwd)}`,
     menu: trayMenu(),
     primaryAction: true,
   });
@@ -604,7 +668,7 @@ export const api = {
       session: session.id,
       replay: session.scrollback.join(''),
       exited: session.exited,
-      slot, cwd, pinned,
+      slot: num, cwd, pinned,
       folder: folderName(cwd),
       hotkey: hotkeyLabel(),
       version: app.info.version,
@@ -687,15 +751,26 @@ export async function init(a) {
   w.setLevel('floating'); // above normal windows, like a popover
   refreshTray();
 
-  const hk = hotkeyCombo();
-  if (hk) app.hotkey.register('toggle', hk);
-
   for (const sig of ['SIGTERM', 'SIGINT', 'SIGHUP']) {
     try { tjs.addSignalListener(sig, () => quit()); } catch {}
   }
-  try { tjs.addSignalListener('SIGUSR1', async () => applyModifiers(await loadModifiers())); } catch {}
+  try {
+    tjs.addSignalListener('SIGUSR1', async () => {
+      await applyModifiers(await loadModifiers());
+      await renumber();
+    });
+  } catch {}
   // Another instance received the click on our notification.
   try { tjs.addSignalListener('SIGUSR2', () => showWindow()); } catch {}
+
+  // Our icon just took its place: record it, let the others renumber, then
+  // take our own number and hotkey. Not awaited, so startup doesn't wait on
+  // the icon being placed.
+  (async () => {
+    await recordPosition();
+    await signalOthers();
+    await renumber(true);
+  })();
 }
 
 export function onTray(id, a) {
