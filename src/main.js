@@ -25,6 +25,7 @@ let command = null; // store key "command": run this instead of a plain shell
 let activity = 'idle';
 let unseen = false;  // it finished while you weren't looking
 let focused = false; // the terminal window has focus
+let open = false;    // the terminal window is showing (its tray icon fills in)
 let notifyOn = true; // store key "notify": post a notification when Claude needs you
 
 // Hotkey modifiers, shared by all instances (each adds its slot digit).
@@ -369,15 +370,27 @@ async function placeUnderTray() {
   win().setPosition(x, y);
 }
 
+function setOpen(value) {
+  if (open === value) return;
+  open = value;
+  refreshTray();
+}
+
 async function showWindow() {
   setUnseen(false);
   await placeUnderTray();
   win().show();
+  setOpen(true);
   app.push('focus-terminal', {});
 }
 
+function hideWindow() {
+  win().hide();
+  setOpen(false);
+}
+
 async function toggleWindow() {
-  if (await visible()) win().hide();
+  if (await visible()) hideWindow();
   else await showWindow();
 }
 
@@ -406,7 +419,7 @@ async function hideOnBlur() {
   try {
     while (!focused && (await mouseButtonDown())) await sleep(100);
     await sleep(150); // a drop lands just after the release and refocuses us
-    if (!focused && !pinned) win().hide();
+    if (!focused && !pinned) hideWindow();
   } finally {
     hidePending = false;
   }
@@ -561,7 +574,7 @@ function trayTitle() {
 
 function refreshTray() {
   app.tray.set({
-    icon: 'sf:apple.terminal',
+    icon: open ? 'sf:apple.terminal.fill' : 'sf:apple.terminal',
     title: trayTitle(),
     tooltip: `codebar ${slot} — ${folderName(cwd)}`,
     menu: trayMenu(),
@@ -633,7 +646,7 @@ export const api = {
   },
 
   async hide() {
-    win().hide();
+    hideWindow();
     return true;
   },
 
