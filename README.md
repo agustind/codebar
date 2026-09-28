@@ -8,6 +8,7 @@ A macOS menu-bar terminal for running Claude Code.
 - **Get told when it needs you.** If Claude finishes, or stops to ask for permission or ask a question, while you're not looking at that terminal, you get a notification (click it to open the instance). Turn the notifications off from the right-click menu under **Notify When Claude Needs You**.
 - **Change the hotkey** from the right-click menu under **Hotkey**: ⌃⌥, ⌘⌥, ⌃⇧ or ⌃⌘ plus the instance number. It applies to every instance.
 - The window hides when it loses focus. Pin it (📌 in the header, or from the right-click menu) to keep it open.
+- **Drag files in** from Finder to paste their paths (images too, for Claude Code). The window stays up while you drag, even though starting the drag takes focus away.
 - The header shows the folder the terminal is in and follows `cd`. **⌘O** (or click the path) restarts the session in a new directory. Each instance slot remembers its own folder.
 
 Keys inside the terminal: ⇧↩ newline · ⌘C copy selection · ⌘V paste · ⌘K clear · ⌘N new instance · ⌘W hide · ⌘+/⌘−/⌘0 zoom.

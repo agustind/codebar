@@ -381,6 +381,37 @@ async function toggleWindow() {
   else await showWindow();
 }
 
+// Popover behaviour: clicking elsewhere puts the terminal away. But dragging
+// a file out of Finder takes focus the moment the drag starts, so while the
+// mouse button is held we stay up as a drop target and decide on release.
+let buttonState;
+async function mouseButtonDown() {
+  if (buttonState === undefined) {
+    buttonState = null;
+    try {
+      const { default: FFI } = await import('tjs:ffi');
+      const cg = new FFI.Lib('/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics');
+      buttonState = new FFI.CFunction(cg.symbol('CGEventSourceButtonState'),
+        FFI.types.uint8, [FFI.types.sint32, FFI.types.uint32]);
+    } catch {}
+  }
+  // kCGEventSourceStateCombinedSessionState, kCGMouseButtonLeft
+  return !!buttonState?.call(0, 0);
+}
+
+let hidePending = false;
+async function hideOnBlur() {
+  if (hidePending) return;
+  hidePending = true;
+  try {
+    while (!focused && (await mouseButtonDown())) await sleep(100);
+    await sleep(150); // a drop lands just after the release and refocuses us
+    if (!focused && !pinned) win().hide();
+  } finally {
+    hidePending = false;
+  }
+}
+
 // ---- tray ---------------------------------------------------------------
 
 function hotkeyCombo() {
@@ -606,6 +637,12 @@ export const api = {
     return true;
   },
 
+  // Files were dropped on the terminal: bring it forward to type into.
+  async dropped() {
+    await showWindow();
+    return true;
+  },
+
   async newInstance() {
     await spawnInstance();
     return true;
@@ -692,6 +729,5 @@ export function onWindowState(info) {
     focused = info.focused;
     if (focused) setUnseen(false);
   }
-  // Popover behaviour: clicking elsewhere puts the terminal away.
-  if (info.win === 'main' && info.focused === false && !pinned) win().hide();
+  if (info.win === 'main' && info.focused === false && !pinned) hideOnBlur();
 }

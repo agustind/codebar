@@ -93,6 +93,13 @@ term.onData((data) => {
 
 term.onResize(({ rows, cols }) => call('resize', { rows, cols }));
 
+// Dropped files paste their paths, escaped the way Terminal.app does it.
+tiny.win.onDrop((paths) => {
+  if (!paths?.length || exited) return;
+  term.paste(paths.map((p) => p.replace(/[\s!"#$&'()*;<>?[\\\]^`{|}~]/g, '\\$&')).join(' ') + ' ');
+  call('dropped');
+});
+
 term.attachCustomKeyEventHandler((e) => {
   if (e.type !== 'keydown') return true;
   if (e.key === 'Escape' && !$('about').hidden) {
