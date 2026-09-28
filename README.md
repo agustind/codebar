@@ -11,7 +11,7 @@ A macOS menu-bar terminal for running Claude Code.
 - **Drag files in** from Finder to paste their paths (images too, for Claude Code). The window stays up while you drag, even though starting the drag takes focus away.
 - The header shows the name of the folder the terminal is in, in capitals (hover for the full path), and follows `cd`. **⌘O** (or click the name) restarts the session in a new directory. Each instance slot remembers its own folder.
 
-Keys inside the terminal: ⇧↩ newline · ⌘C copy selection · ⌘V paste · ⌘K clear · ⌘N new instance · ⌘W hide · ⌘+/⌘−/⌘0 zoom.
+Keys inside the terminal: ⇧↩ newline · ⌘C copy selection · ⌘V paste · ⌘K clear · ⌘N new instance · ⌘+/⌘−/⌘0 zoom. **⌘W** closes the window from anywhere in it.
 
 ## Develop
 

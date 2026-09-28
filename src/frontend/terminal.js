@@ -115,6 +115,15 @@ addEventListener('dragover', (e) => {
 });
 addEventListener('drop', (e) => e.preventDefault());
 
+// ⌘W puts the window away wherever the focus is (a header button, the About
+// box), not only in the terminal.
+addEventListener('keydown', (e) => {
+  if (!e.metaKey || e.shiftKey || e.altKey || e.ctrlKey || e.key.toLowerCase() !== 'w') return;
+  e.preventDefault();
+  e.stopPropagation();
+  call('hide');
+}, true);
+
 term.attachCustomKeyEventHandler((e) => {
   if (e.type !== 'keydown') return true;
   if (e.key === 'Escape' && !$('about').hidden) {
@@ -138,7 +147,6 @@ term.attachCustomKeyEventHandler((e) => {
     case 'k': term.clear(); return false;
     case 'n': call('newInstance'); return false;
     case 'o': chooseFolder(); return false;
-    case 'w': call('hide'); return false;
     case '=': case '+': zoom(1); return false;
     case '-': zoom(-1); return false;
     case '0': zoom(0); return false;
