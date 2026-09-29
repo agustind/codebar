@@ -1,6 +1,14 @@
-# codebar
+```
+                  _        _
+  ___   ___    __| |  ___ | |__    __ _  _ __
+ / __| / _ \  / _` | / _ \| '_ \  / _` || '__|
+| (__ | (_) || (_| ||  __/| |_) || (_| || |
+ \___| \___/  \__,_| \___||_.__/  \__,_||_|
+```
 
 A macOS menu-bar terminal for running Claude Code.
+
+<img src="screenshot.png" alt="codebar's terminal dropped down under its menu-bar icon, running Claude Code" width="720">
 
 - **Click** the menu-bar icon, or press **⌃⌥1**, to drop a terminal down under the icon. It also drops down on its own when codebar starts. It opens a plain login shell; `cd` to your project and run `claude` yourself.
 - **Run several projects side by side.** Right-click the icon, then **New Instance**, to add another icon with its own terminal and session. The icons are numbered left to right, and the *n*th one toggles with **⌃⌥n**, so you can keep one Claude Code per project in the menu bar. New instances appear on the left (macOS places them there), so the numbers shift as instances come and go.
