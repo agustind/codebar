@@ -72,8 +72,9 @@ final class ActionItem: NSMenuItem {
 // ---- settings -------------------------------------------------------------
 
 /// Settings stay where earlier versions kept them, so they carry over:
-/// store.json (each slot's folder as `cwd.<n>`, `command`, `notify`) and the
-/// hotkey-modifiers file.
+/// store.json (each slot's folder as `cwd.<n>`, its size and place as
+/// `size.<n>` and `pos.<n>`, `command`, `notify`) and the hotkey-modifiers
+/// file.
 @MainActor
 final class Store {
   static let shared = Store()

@@ -6,6 +6,7 @@ import UserNotifications
 @MainActor
 final class Instance: NSObject {
   static let windowSize = NSSize(width: 760, height: 480)
+  static let minSize = NSSize(width: 420, height: 200)
   static let spinner = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
 
   /// Stable for the instance: remembered folder, hotkey registration,
@@ -19,6 +20,11 @@ final class Instance: NSObject {
   let ui: InstanceView
 
   private var cwd: String
+  /// What you sized it to; it shrinks to fit a smaller screen but comes back.
+  private var size: NSSize
+  /// Where you dragged it (its top-left corner); nil while it hangs under
+  /// its icon.
+  private var topLeft: NSPoint?
   private var pinned = false
   private var fontSize = Theme.defaultFontSize
 
@@ -49,11 +55,19 @@ final class Instance: NSObject {
     let saved = slot <= AppDelegate.maxSlots ? Store.shared.string("cwd.\(slot)") : nil
     var isDir: ObjCBool = false
     cwd = saved.flatMap { FileManager.default.fileExists(atPath: $0, isDirectory: &isDir) && isDir.boolValue ? $0 : nil } ?? homeDir
+    size = (slot <= AppDelegate.maxSlots ? Store.shared.string("size.\(slot)") : nil).flatMap { s in
+      let wh = s.split(separator: "x").compactMap { Double($0) }
+      return wh.count == 2 ? NSSize(width: wh[0], height: wh[1]) : nil
+    } ?? Self.windowSize
+    topLeft = (slot <= AppDelegate.maxSlots ? Store.shared.string("pos.\(slot)") : nil).flatMap { s in
+      let xy = s.split(separator: ",").compactMap { Double($0) }
+      return xy.count == 2 ? NSPoint(x: xy[0], y: xy[1]) : nil
+    }
 
     statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-    window = DropdownWindow(contentRect: NSRect(origin: .zero, size: Self.windowSize),
+    window = DropdownWindow(contentRect: NSRect(origin: .zero, size: size),
                             styleMask: [.borderless], backing: .buffered, defer: false)
-    ui = InstanceView(frame: NSRect(origin: .zero, size: Self.windowSize))
+    ui = InstanceView(frame: NSRect(origin: .zero, size: size))
     super.init()
 
     window.contentView = ui
@@ -65,6 +79,7 @@ final class Instance: NSObject {
     window.level = .floating // above normal windows, like a popover
     window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary] // drop down on whatever Space is active
     window.delegate = self
+    ui.docked = topLeft == nil
     ui.layoutSubtreeIfNeeded()
 
     if let b = statusItem.button {
@@ -94,6 +109,9 @@ final class Instance: NSObject {
     ui.quit.onDismiss = { [weak self] in self?.showQuitConfirm(nil) }
     ui.onOpenURL = { NSWorkspace.shared.open($0) }
     ui.onDrop = { [weak self] in self?.dropped($0) }
+    ui.onResize = { [weak self] in self?.resize($0, done: $1) }
+    ui.onMove = { [weak self] in self?.move($0, done: $1) }
+    ui.onDock = { [weak self] in self?.dock() }
     ui.aboutVersion.stringValue = "Version " + (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev")
   }
 
@@ -153,6 +171,9 @@ final class Instance: NSObject {
     m.addItem(.separator())
     m.addItem(ActionItem("Restart Session") { [weak self] in self?.startSession() })
     m.addItem(ActionItem("Keep Open When Unfocused", checked: pinned) { [weak self] in self?.togglePinned() })
+    if topLeft != nil {
+      m.addItem(ActionItem("Move Back Under Icon") { [weak self] in self?.dock() })
+    }
     m.addItem(ActionItem("Notify When Claude Needs You", checked: app.notifyOn) { [weak self] in
       self?.app.setNotify(!(self?.app.notifyOn ?? true))
     })
@@ -248,16 +269,91 @@ final class Instance: NSObject {
     refreshTray()
   }
 
-  /// Centered under the icon, kept on its screen.
+  /// Centered under the icon, or where you dragged it; kept on its screen.
   private func place() {
-    guard let item = statusItem.button?.window else { return window.center() }
+    var size = NSSize(width: max(size.width, Self.minSize.width).rounded(),
+                      height: max(size.height, Self.minSize.height).rounded())
+    if let topLeft {
+      return setFrame(onScreen(NSRect(x: topLeft.x, y: topLeft.y - size.height, width: size.width, height: size.height)))
+    }
+    guard let item = statusItem.button?.window else {
+      window.setContentSize(size)
+      return window.center()
+    }
     let f = item.frame
-    let size = window.frame.size
+    let screen = item.screen ?? NSScreen.main
+    if let s = screen {
+      size.width = min(size.width, s.frame.width - 16)
+      size.height = min(size.height, f.minY - 4 - s.visibleFrame.minY - 8)
+    }
     var x = (f.midX - size.width / 2).rounded()
-    if let s = item.screen ?? NSScreen.main {
+    if let s = screen {
       x = max(s.frame.minX + 8, min(x, s.frame.maxX - size.width - 8))
     }
-    window.setFrameOrigin(NSPoint(x: x, y: f.minY - 4 - size.height))
+    setFrame(NSRect(x: x, y: f.minY - 4 - size.height, width: size.width, height: size.height))
+  }
+
+  private func setFrame(_ f: NSRect) {
+    window.setFrame(f, display: true)
+    ui.layoutSubtreeIfNeeded()
+    window.invalidateShadow()
+  }
+
+  /// Fits it inside the screen it's mostly on, below the menu bar.
+  private func onScreen(_ f: NSRect) -> NSRect {
+    func overlap(_ s: NSScreen) -> CGFloat {
+      let i = s.visibleFrame.intersection(f)
+      return i.isNull ? 0 : i.width * i.height
+    }
+    guard let s = (NSScreen.screens.max { overlap($0) < overlap($1) } ?? NSScreen.main)?.visibleFrame else { return f }
+    var f = f
+    f.size = NSSize(width: min(f.width, s.width), height: min(f.height, s.height))
+    f.origin.x = max(s.minX, min(f.minX, s.maxX - f.width))
+    f.origin.y = max(s.minY, min(f.maxY, s.maxY) - f.height)
+    return f
+  }
+
+  /// Dragging an edge. On release it keeps the size it ended up at, for this
+  /// slot, next time too.
+  private func resize(_ frame: NSRect, done: Bool) {
+    size = frame.size
+    if topLeft == nil {
+      place()
+    } else {
+      topLeft = NSPoint(x: frame.minX, y: frame.maxY)
+      if done { place() } else { setFrame(frame) }
+    }
+    if done { saveFrame() }
+  }
+
+  /// Dragging the header takes it off its icon, to stay where you drop it
+  /// (for this slot, next time too).
+  private func move(_ origin: NSPoint, done: Bool) {
+    topLeft = NSPoint(x: origin.x, y: origin.y + window.frame.height)
+    ui.docked = false
+    if done {
+      place()
+      saveFrame()
+    } else {
+      window.setFrameOrigin(origin)
+    }
+  }
+
+  /// Back under its icon.
+  private func dock() {
+    guard topLeft != nil else { return }
+    topLeft = nil
+    ui.docked = true
+    place()
+    saveFrame()
+  }
+
+  private func saveFrame() {
+    size = window.frame.size
+    if topLeft != nil { topLeft = NSPoint(x: window.frame.minX, y: window.frame.maxY) }
+    guard slot <= AppDelegate.maxSlots else { return }
+    Store.shared.set("size.\(slot)", "\(Int(size.width))x\(Int(size.height))")
+    Store.shared.set("pos.\(slot)", topLeft.map { "\(Int($0.x)),\(Int($0.y))" } ?? "")
   }
 
   var iconX: CGFloat { statusItem.button?.window?.frame.minX ?? 0 }

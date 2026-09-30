@@ -147,6 +147,18 @@ final class Overlay: NSView {
 /// over it.
 final class InstanceView: NSView {
   static let headerHeight: CGFloat = 30
+  /// How close to an edge a drag resizes the window; the terminal stays
+  /// clear of it so its I-beam doesn't cover the resize cursor.
+  static let grip: CGFloat = 6
+
+  /// The edges that resize the window.
+  struct Edges: OptionSet {
+    let rawValue: Int
+    static let left = Edges(rawValue: 1)
+    static let right = Edges(rawValue: 2)
+    static let bottom = Edges(rawValue: 4)
+    static let top = Edges(rawValue: 8)
+  }
 
   let header = NSView()
   let badge = label("1", size: 11, weight: .semibold, color: .white)
@@ -169,6 +181,17 @@ final class InstanceView: NSView {
 
   var onDrop: (([String]) -> Void)?
   var onOpenURL: ((URL) -> Void)?
+  /// The frame a resize drag asks for; `done` on release.
+  var onResize: ((_ frame: NSRect, _ done: Bool) -> Void)?
+  /// Where dragging the header puts the window's origin; `done` on release.
+  var onMove: ((_ origin: NSPoint, _ done: Bool) -> Void)?
+  /// Double-clicking the header.
+  var onDock: (() -> Void)?
+  /// Hanging from its icon: the top edge doesn't resize and the sides move
+  /// together, so it stays centered.
+  var docked = true {
+    didSet { window?.invalidateCursorRects(for: self) }
+  }
 
   private(set) weak var terminal: NSView?
 
@@ -328,7 +351,8 @@ final class InstanceView: NSView {
     let fs = folder.fit(padX: 8, height: 22)
     folder.frame = NSRect(x: fx, y: (hh - 22) / 2, width: min(fs.width, w * 0.5), height: 22)
 
-    termBox.frame = NSRect(x: 10, y: 4, width: w - 14, height: h - hh - 10)
+    let g = Self.grip
+    termBox.frame = NSRect(x: 10, y: g, width: w - 10 - g, height: h - hh - 6 - g)
 
     exitedLabel.sizeToFit()
     let rs = restart.fit(padX: 10, height: 22)
@@ -339,6 +363,132 @@ final class InstanceView: NSView {
 
     about.frame = bounds
     quit.frame = bounds
+  }
+
+  // ---- resizing -----------------------------------------------------------
+
+  override func setFrameSize(_ newSize: NSSize) {
+    super.setFrameSize(newSize)
+    needsLayout = true
+    window?.invalidateCursorRects(for: self)
+  }
+
+  /// Which edges a point is on; near a corner it's both.
+  private func edges(at p: NSPoint) -> Edges {
+    let g = Self.grip, c = 3 * g, w = bounds.width, h = bounds.height
+    var e: Edges = []
+    if p.x < g { e.insert(.left) }
+    if p.x > w - g { e.insert(.right) }
+    if p.y < g { e.insert(.bottom) }
+    if !docked && p.y > h - g { e.insert(.top) }
+    // The corners reach further along the edges than the edges are thick.
+    if !e.isDisjoint(with: [.left, .right]) {
+      if p.y < c { e.insert(.bottom) } else if !docked && p.y > h - c { e.insert(.top) }
+    }
+    if !e.isDisjoint(with: [.bottom, .top]) {
+      if p.x < c { e.insert(.left) } else if p.x > w - c { e.insert(.right) }
+    }
+    return e
+  }
+
+  /// The edges resize, and the header's background and labels move the
+  /// window; its buttons stay buttons.
+  override func hitTest(_ point: NSPoint) -> NSView? {
+    guard !isHidden, frame.contains(point) else { return nil }
+    let p = convert(point, from: superview)
+    if !edges(at: p).isEmpty { return self }
+    let hit = super.hitTest(point)
+    if p.y > bounds.height - Self.headerHeight, !(hit is NSButton), about.isHidden, quit.isHidden { return self }
+    return hit
+  }
+
+  override func resetCursorRects() {
+    let g = Self.grip, c = 3 * g, w = bounds.width, h = bounds.height
+    let sideTop = docked ? h : h - c
+    var rects: [(NSRect, Edges)] = [
+      (NSRect(x: 0, y: c, width: g, height: sideTop - c), .left),
+      (NSRect(x: w - g, y: c, width: g, height: sideTop - c), .right),
+      (NSRect(x: c, y: 0, width: w - 2 * c, height: g), .bottom),
+      (NSRect(x: 0, y: 0, width: c, height: g), [.bottom, .left]),
+      (NSRect(x: 0, y: 0, width: g, height: c), [.bottom, .left]),
+      (NSRect(x: w - c, y: 0, width: c, height: g), [.bottom, .right]),
+      (NSRect(x: w - g, y: 0, width: g, height: c), [.bottom, .right]),
+    ]
+    if !docked {
+      let tl: Edges = [.top, .left], tr: Edges = [.top, .right]
+      rects.append((NSRect(x: c, y: h - g, width: w - 2 * c, height: g), .top))
+      rects.append((NSRect(x: 0, y: h - g, width: c, height: g), tl))
+      rects.append((NSRect(x: 0, y: h - c, width: g, height: c), tl))
+      rects.append((NSRect(x: w - c, y: h - g, width: c, height: g), tr))
+      rects.append((NSRect(x: w - g, y: h - c, width: g, height: c), tr))
+    }
+    for (r, e) in rects { addCursorRect(r, cursor: Self.cursor(e)) }
+  }
+
+  private static func cursor(_ e: Edges) -> NSCursor {
+    if #available(macOS 15, *) {
+      let pos: NSCursor.FrameResizePosition = switch e {
+      case .left: .left
+      case .right: .right
+      case .bottom: .bottom
+      case .top: .top
+      case [.top, .left]: .topLeft
+      case [.top, .right]: .topRight
+      case [.bottom, .left]: .bottomLeft
+      default: .bottomRight
+      }
+      return .frameResize(position: pos, directions: .all)
+    }
+    return e == .bottom || e == .top ? .resizeUpDown : .resizeLeftRight
+  }
+
+  /// Grabbing an edge or the header works even when the window isn't focused.
+  override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+  /// An edge resizes (docked, dragging a side moves both sides, so it stays
+  /// centered); the header moves the window, and double-clicked docks it.
+  override func mouseDown(with event: NSEvent) {
+    let p = convert(event.locationInWindow, from: nil)
+    let e = edges(at: p)
+    guard let window, !e.isEmpty || p.y > bounds.height - Self.headerHeight else { return super.mouseDown(with: event) }
+    let start = window.frame
+    if e.isEmpty {
+      if event.clickCount == 2 {
+        onDock?()
+        return
+      }
+      var moved = false // a click that doesn't go anywhere leaves it be
+      drag(window) { dx, dy, done in
+        moved = moved || abs(dx) + abs(dy) > 3
+        if moved { onMove?(NSPoint(x: start.minX + dx, y: start.minY + dy), done) }
+      }
+      return
+    }
+    let min = Instance.minSize
+    drag(window) { dx, dy, done in
+      var f = start
+      if e.contains(.left) { f.size.width -= docked ? 2 * dx : dx }
+      if e.contains(.right) { f.size.width += docked ? 2 * dx : dx }
+      if e.contains(.bottom) { f.size.height -= dy }
+      if e.contains(.top) { f.size.height += dy }
+      f.size = NSSize(width: max(f.width, min.width), height: max(f.height, min.height))
+      // Whichever edge isn't being dragged stays put.
+      if e.contains(.left) { f.origin.x = start.maxX - f.width }
+      if !e.contains(.top) { f.origin.y = start.maxY - f.height }
+      onResize?(f, done)
+    }
+  }
+
+  /// Follows the mouse until it's released: how far it went, and whether
+  /// that's the release.
+  private func drag(_ window: NSWindow, _ step: (_ dx: CGFloat, _ dy: CGFloat, _ done: Bool) -> Void) {
+    let start = NSEvent.mouseLocation
+    while let next = window.nextEvent(matching: [.leftMouseDragged, .leftMouseUp]) {
+      let p = NSEvent.mouseLocation
+      let done = next.type == .leftMouseUp
+      step(p.x - start.x, p.y - start.y, done)
+      if done { break }
+    }
   }
 
   // ---- dropping files -----------------------------------------------------

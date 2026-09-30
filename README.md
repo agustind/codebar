@@ -20,6 +20,8 @@ A macOS menu-bar terminal for running Claude Code.
 - **See what each one is doing.** Next to each instance's number in the menu bar: a spinner while Claude Code is working (`1 ⠹`), `?` while it waits on a permission prompt or a question for you (`1 ?`), and `✓` when it finished while you weren't looking (`1 ✓`, until you open it). The icon of the instance that's open is filled in, so you can tell which terminal you're looking at.
 - **Get told when it needs you.** If Claude finishes, or stops to ask for permission or ask a question, while you're not looking at that terminal, you get a notification (click it to open the instance). Turn the notifications off from the right-click menu under **Notify When Claude Needs You**.
 - **Change the hotkey** from the right-click menu under **Hotkey**: ⌃⌥, ⌘⌥, ⌃⇧ or ⌃⌘ plus the icon's number. It applies to every instance.
+- **Resize** the window by dragging an edge or a corner. Under its icon it stays centered there (the sides move together).
+- **Move** it anywhere by dragging its header, onto any screen. It opens there from then on; double-click the header (or **Move Back Under Icon** in the right-click menu) to put it back under its icon. Each instance slot remembers its size and place.
 - The window hides when it loses focus. Pin it (📌 in the header, or from the right-click menu) to keep it open.
 - **Drag files in** from Finder to paste their paths (images too, for Claude Code). The window stays up while you drag, even though starting the drag takes focus away.
 - The header shows the name of the folder the terminal is in, in capitals (hover for the full path), and follows `cd`. **⌘O** (or click the name) restarts the session in a new directory. Each instance slot remembers its own folder.
@@ -47,5 +49,5 @@ The version lives in `VERSION`. Building needs Xcode's Metal toolchain for Swift
 - Activity: Claude Code sets the terminal title to `◐`/`◑ <title>` while it works and `✳ <title>` otherwise. codebar watches for that and animates the menu-bar title. It won't show if `CLAUDE_CODE_DISABLE_TERMINAL_TITLE` is set.
 - Done or waiting: `✳` looks the same either way, so when the spinner stops codebar reads `~/.claude/sessions/<pid>.json` (the file Claude Code keeps with its `status` and `waitingFor`) for the Claude process on that instance's tty. `waiting` shows `?`; anything else counts as done.
 - Numbering: macOS puts each new menu-bar icon on the left, so the icons are numbered by where they sit (⌘-dragging one renumbers too), and each hotkey follows its number. Each instance also has a slot (the lowest free one when it starts), which keeps its remembered folder.
-- Settings live in `~/Library/Application Support/app.codebar/`: `store.json` (each slot's folder as `cwd.<n>`, `notify`) and `hotkey-modifiers`.
+- Settings live in `~/Library/Application Support/app.codebar/`: `store.json` (each slot's folder as `cwd.<n>` and window size and position as `size.<n>` and `pos.<n>`, `notify`) and `hotkey-modifiers`.
 - Custom startup command: set the `store.json` key `command` (for example `claude`). By default there isn't one, so you get a plain shell.
