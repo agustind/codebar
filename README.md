@@ -28,6 +28,10 @@ A macOS menu-bar terminal for running Claude Code.
 
 Keys inside the terminal: ⇧↩ newline · ⌘-click a link to open it · ⌘C copy selection · ⌘V paste · ⌘K clear · ⌘N new instance · ⌘+/⌘−/⌘0 zoom. **⌘W** quits the instance from anywhere in its window; if Claude is working or waiting on you it asks first (↵ quit, esc cancel).
 
+## Install
+
+Download the `.dmg` from the [latest release](https://github.com/agustind/codebar/releases/latest), open it and drag codebar to Applications. Needs macOS 14 or later.
+
 ## Develop
 
 A native AppKit app in Swift; the terminal is [SwiftTerm](https://github.com/migueldeicaza/SwiftTerm).
