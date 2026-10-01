@@ -78,6 +78,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     instances.first { $0.slot == slot }?.show()
   }
 
+  /// Opens the instance `step` places along from `inst` by number, wrapping
+  /// around. `inst` hides on its own as it loses the focus, unless pinned.
+  func cycle(from inst: Instance, by step: Int) {
+    let ordered = instances.sorted { $0.num < $1.num }
+    guard ordered.count > 1, let i = ordered.firstIndex(where: { $0 === inst }) else { return }
+    ordered[(i + step + ordered.count) % ordered.count].show()
+  }
+
   // The icons are numbered left to right (by where they actually sit, so
   // dragging one with ⌘ renumbers too), and each hotkey follows its number.
   @objc private func iconMoved() {

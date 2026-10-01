@@ -434,6 +434,12 @@ final class Instance: NSObject {
       quit(force: false)
       return true
     }
+    // ⌘` / ⇧⌘` switches to the next / previous instance (by the key, not the
+    // character, so ⇧ doesn't turn it into ~).
+    if e.keyCode == 50 && mods.subtracting(.shift) == .command {
+      app.cycle(from: self, by: mods.contains(.shift) ? -1 : 1)
+      return true
+    }
     if !ui.about.isHidden {
       if enter || esc { showAbout(false) }
       return true
