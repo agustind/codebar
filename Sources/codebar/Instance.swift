@@ -241,6 +241,7 @@ final class Instance: NSObject {
   }
 
   func show() {
+    app.cameBack()
     setUnseen(false)
     place()
     NSApp.unhide(nil)
@@ -256,6 +257,7 @@ final class Instance: NSObject {
     setOpen(false)
     // Hand the focus back to whatever had it, unless another of ours is up.
     if NSApp.isActive, !app.instances.contains(where: { $0.window.isVisible }) { NSApp.hide(nil) }
+    app.updatePolicy()
   }
 
   private func focusTerminal() {
@@ -361,9 +363,12 @@ final class Instance: NSObject {
   // Popover behaviour: clicking elsewhere puts the terminal away. But dragging
   // a file out of Finder takes focus the moment the drag starts, so while the
   // mouse button is held we stay up as a drop target and decide on release.
+  // Leaving without a click (⌘Tab) puts it away too, but keeps codebar in
+  // ⌘Tab to come back to it.
   private func hideOnBlur() {
     guard !hidePending else { return }
     hidePending = true
+    let blurred = Date()
     func check() {
       if !window.isKeyWindow && NSEvent.pressedMouseButtons & 1 != 0 {
         return after(0.1, check)
@@ -373,6 +378,9 @@ final class Instance: NSObject {
         hidePending = false
         if !window.isKeyWindow && !pinned && !holdOpen && window.isVisible {
           lastBlurHide = Date()
+          if !NSApp.isActive && app.lastClickElsewhere < blurred.addingTimeInterval(-0.5) {
+            app.switchedAway(from: self)
+          }
           hide()
         }
       }

@@ -22,7 +22,7 @@ A macOS menu-bar terminal for running Claude Code.
 - **Change the hotkey** from the right-click menu under **Hotkey**: ⌃⌥, ⌘⌥, ⌃⇧ or ⌃⌘ plus the icon's number. It applies to every instance.
 - **Resize** the window by dragging an edge or a corner. Under its icon it stays centered there (the sides move together).
 - **Move** it anywhere by dragging its header, onto any screen. It opens there from then on; double-click the header (or **Move Back Under Icon** in the right-click menu) to put it back under its icon. Each instance slot remembers its size and place.
-- The window hides when it loses focus. Pin it (📌 in the header, or from the right-click menu) to keep it open.
+- The window hides when it loses focus. Pin it (📌 in the header, or from the right-click menu) to keep it open. If you **⌘Tab** away from it, codebar shows up in ⌘Tab (and the Dock) until you come back, so ⌘Tab brings the terminal back.
 - **Drag files in** from Finder to paste their paths (images too, for Claude Code). The window stays up while you drag, even though starting the drag takes focus away.
 - The header shows the name of the folder the terminal is in, in capitals (hover for the full path), and follows `cd`. **⌘O** (or click the name) restarts the session in a new directory. Each instance slot remembers its own folder.
 

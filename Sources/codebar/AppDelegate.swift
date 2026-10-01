@@ -14,6 +14,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   private var renumberPending = false
 
+  /// The instance you left without clicking somewhere else (⌘Tab, a
+  /// launcher), which hid as it lost the focus. Until you come back to it,
+  /// codebar shows up in ⌘Tab (and the Dock) so you can.
+  private weak var leftOpen: Instance?
+  /// A click in another app, which is how you put the terminal away rather
+  /// than switch from it.
+  private(set) var lastClickElsewhere = Date.distantPast
+
   func applicationDidFinishLaunching(_ notification: Notification) {
     AppDelegate.shared = self
     let store = Store.shared
@@ -33,14 +41,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       }
       return handled ? nil : e
     }
+    NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]) { _ in
+      MainActor.assumeIsolated { AppDelegate.shared.lastClickElsewhere = Date() }
+    }
 
     newInstance()
   }
 
-  /// Opening the app again while it runs brings up the first terminal.
+  /// Opening the app again while it runs (or clicking it in the Dock) brings
+  /// up the terminal you left, or else the first one.
   func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-    instances.min { $0.num < $1.num }?.show()
+    guard !instances.contains(where: { $0.window.isVisible }) else { return false }
+    (leftOpen ?? instances.min { $0.num < $1.num })?.show()
     return false
+  }
+
+  /// ⌘Tab back to codebar reopens the terminal you left.
+  func applicationDidBecomeActive(_ notification: Notification) {
+    leftOpen?.show()
+  }
+
+  func applicationDidResignActive(_ notification: Notification) {
+    if !instances.contains(where: { $0.window.isVisible }) { updatePolicy() }
   }
 
   func applicationWillTerminate(_ notification: Notification) {
@@ -67,11 +89,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   }
 
   func remove(_ inst: Instance) {
+    if leftOpen === inst { leftOpen = nil }
     NotificationCenter.default.removeObserver(self, name: NSWindow.didMoveNotification, object: inst.statusItem.button?.window)
     inst.teardown()
     instances.removeAll { $0 === inst }
     if instances.isEmpty { return NSApp.terminate(nil) }
     renumber()
+    updatePolicy()
+  }
+
+  // ---- ⌘Tab ---------------------------------------------------------------
+
+  func switchedAway(from inst: Instance) {
+    leftOpen = inst
+  }
+
+  /// Opening any instance is coming back.
+  func cameBack() {
+    leftOpen = nil
+    updatePolicy()
+  }
+
+  /// In ⌘Tab and the Dock only while there's a terminal to come back to. It
+  /// only changes while codebar is in the background, since dropping out of
+  /// them also takes the focus away.
+  func updatePolicy() {
+    guard !NSApp.isActive else { return }
+    NSApp.setActivationPolicy(leftOpen == nil ? .accessory : .regular)
   }
 
   func show(slot: Int) {
