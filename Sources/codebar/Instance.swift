@@ -434,6 +434,11 @@ final class Instance: NSObject {
       quit(force: false)
       return true
     }
+    // ⌘Q quits the whole app, every instance with it.
+    if mods == .command && key == "q" {
+      NSApp.terminate(nil)
+      return true
+    }
     // ⌘` / ⇧⌘` switches to the next / previous instance (by the key, not the
     // character, so ⇧ doesn't turn it into ~).
     if e.keyCode == 50 && mods.subtracting(.shift) == .command {
