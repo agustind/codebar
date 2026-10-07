@@ -165,7 +165,8 @@ final class InstanceView: NSView {
   let badgeBG = NSView()
   let folder = FlatButton(font: .monospacedSystemFont(ofSize: 12, weight: .regular))
   let hint = label("", size: 11, color: Theme.muted)
-  let pin = FlatButton(symbol: "pin.fill")
+  /// Claude's activity, after the folder: the spinner, ? or ✓.
+  let status = label("", color: Theme.muted)
   let add = FlatButton(symbol: "plus")
   let termBox = NSView()
   let exited = NSView()
@@ -216,11 +217,10 @@ final class InstanceView: NSView {
     badgeBG.layer?.cornerRadius = 9
     badge.alignment = .center
     badgeBG.addSubview(badge)
-    pin.toolTip = "Keep open when unfocused"
-    pin.tint = Theme.muted
     add.toolTip = "New instance (⌘N)"
     add.tint = Theme.muted
-    for v in [badgeBG, folder, hint, pin, add] { header.addSubview(v) }
+    status.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
+    for v in [badgeBG, folder, status, hint, add] { header.addSubview(v) }
     addSubview(termBox)
     addSubview(header)
 
@@ -318,8 +318,10 @@ final class InstanceView: NSView {
     needsLayout = true
   }
 
-  func setPinned(_ on: Bool) {
-    pin.tint = on ? Theme.accent : Theme.muted
+  func setStatus(_ mark: String?) {
+    status.stringValue = mark ?? ""
+    status.textColor = mark == "?" ? Theme.accent : mark == "✓" ? NSColor(hex: Theme.ansi[2]) : Theme.muted
+    needsLayout = true
   }
 
   func showExited(_ message: String?) {
@@ -335,7 +337,7 @@ final class InstanceView: NSView {
     let w = bounds.width, h = bounds.height, hh = Self.headerHeight
     header.frame = NSRect(x: 0, y: h - hh, width: w, height: hh)
 
-    // Header, left to right: badge, folder … hint, pin, add.
+    // Header, left to right: badge, folder, status … hint, add.
     badge.sizeToFit()
     let bw = max(18, badge.frame.width + 10)
     badgeBG.frame = NSRect(x: 8, y: (hh - 18) / 2, width: bw, height: 18)
@@ -343,13 +345,13 @@ final class InstanceView: NSView {
     var right = w - 8
     add.frame = NSRect(x: right - 24, y: (hh - 22) / 2, width: 24, height: 22)
     right -= 24 + 6
-    pin.frame = NSRect(x: right - 24, y: (hh - 22) / 2, width: 24, height: 22)
-    right -= 24 + 6
     hint.sizeToFit()
     hint.frame.origin = NSPoint(x: right - hint.frame.width, y: ((hh - hint.frame.height) / 2).rounded())
     let fx = badgeBG.frame.maxX + 6
     let fs = folder.fit(padX: 8, height: 22)
     folder.frame = NSRect(x: fx, y: (hh - 22) / 2, width: min(fs.width, w * 0.5), height: 22)
+    status.sizeToFit()
+    status.frame.origin = NSPoint(x: folder.frame.maxX - 4, y: ((hh - status.frame.height) / 2).rounded())
 
     let g = Self.grip
     termBox.frame = NSRect(x: 10, y: g, width: w - 10 - g, height: h - hh - 6 - g)

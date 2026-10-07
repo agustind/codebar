@@ -4,6 +4,8 @@ import UserNotifications
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
   static let maxSlots = 9
+  /// <modifiers>+0 arranges them all; slots start at 1, so 0 is free.
+  static let gridHotkey: UInt32 = 0
   static var shared: AppDelegate!
 
   private(set) var instances: [Instance] = []
@@ -13,14 +15,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private(set) var command: String?
 
   private var renumberPending = false
-
-  /// The instance you left without clicking somewhere else (⌘Tab, a
-  /// launcher), which hid as it lost the focus. Until you come back to it,
-  /// codebar shows up in ⌘Tab (and the Dock) so you can.
-  private weak var leftOpen: Instance?
-  /// A click in another app, which is how you put the terminal away rather
-  /// than switch from it.
-  private(set) var lastClickElsewhere = Date.distantPast
 
   func applicationDidFinishLaunching(_ notification: Notification) {
     AppDelegate.shared = self
@@ -33,7 +27,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     if notifyOn { requestNotifications() }
 
     HotKeys.shared.onPress = { [weak self] id in
-      self?.instances.first { UInt32($0.slot) == id }?.toggle()
+      guard let self else { return }
+      if id == Self.gridHotkey {
+        arrange()
+      } else {
+        instances.first { UInt32($0.slot) == id }?.toggle()
+      }
     }
     NSEvent.addLocalMonitorForEvents(matching: .keyDown) { e in
       let handled = MainActor.assumeIsolated {
@@ -41,28 +40,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       }
       return handled ? nil : e
     }
-    NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]) { _ in
-      MainActor.assumeIsolated { AppDelegate.shared.lastClickElsewhere = Date() }
-    }
 
     newInstance()
   }
 
-  /// Opening the app again while it runs (or clicking it in the Dock) brings
-  /// up the terminal you left, or else the first one.
+  /// Opening the app again while it runs brings up the first terminal, if
+  /// none is open.
   func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
     guard !instances.contains(where: { $0.window.isVisible }) else { return false }
-    (leftOpen ?? instances.min { $0.num < $1.num })?.show()
+    instances.min { $0.num < $1.num }?.show()
     return false
   }
 
-  /// ⌘Tab back to codebar reopens the terminal you left.
-  func applicationDidBecomeActive(_ notification: Notification) {
-    leftOpen?.show()
-  }
-
   func applicationDidResignActive(_ notification: Notification) {
-    if !instances.contains(where: { $0.window.isVisible }) { updatePolicy() }
+    updatePolicy()
   }
 
   func applicationWillTerminate(_ notification: Notification) {
@@ -89,7 +80,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   }
 
   func remove(_ inst: Instance) {
-    if leftOpen === inst { leftOpen = nil }
     NotificationCenter.default.removeObserver(self, name: NSWindow.didMoveNotification, object: inst.statusItem.button?.window)
     inst.teardown()
     instances.removeAll { $0 === inst }
@@ -100,22 +90,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   // ---- ⌘Tab ---------------------------------------------------------------
 
-  func switchedAway(from inst: Instance) {
-    leftOpen = inst
-  }
-
-  /// Opening any instance is coming back.
-  func cameBack() {
-    leftOpen = nil
-    updatePolicy()
-  }
-
-  /// In ⌘Tab and the Dock only while there's a terminal to come back to. It
-  /// only changes while codebar is in the background, since dropping out of
-  /// them also takes the focus away.
+  /// In ⌘Tab and the Dock while a terminal is open, so you can come back to
+  /// it. It only changes while codebar is in the background, since dropping
+  /// out of them also takes the focus away.
   func updatePolicy() {
     guard !NSApp.isActive else { return }
-    NSApp.setActivationPolicy(leftOpen == nil ? .accessory : .regular)
+    NSApp.setActivationPolicy(instances.contains { $0.window.isVisible } ? .regular : .accessory)
   }
 
   func show(slot: Int) {
@@ -123,11 +103,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   }
 
   /// Opens the instance `step` places along from `inst` by number, wrapping
-  /// around. `inst` hides on its own as it loses the focus, unless pinned.
+  /// around. `inst` stays open behind it.
   func cycle(from inst: Instance, by step: Int) {
     let ordered = instances.sorted { $0.num < $1.num }
     guard ordered.count > 1, let i = ordered.firstIndex(where: { $0 === inst }) else { return }
     ordered[(i + step + ordered.count) % ordered.count].show()
+  }
+
+  /// Every instance, in a grid on the screen the mouse is on, in icon order.
+  /// The one you were in (or else the first) gets the focus.
+  func arrange() {
+    let ordered = instances.sorted { $0.num < $1.num }
+    let mouse = NSEvent.mouseLocation
+    guard let screen = NSScreen.screens.first(where: { NSMouseInRect(mouse, $0.frame, false) }) ?? NSScreen.main,
+          let focus = ordered.first(where: { $0.window.isKeyWindow }) ?? ordered.first
+    else { return }
+    let gap: CGFloat = 8
+    let area = screen.visibleFrame.insetBy(dx: gap, dy: gap)
+    let cols = Int(Double(ordered.count).squareRoot().rounded(.up))
+    let rows = (ordered.count + cols - 1) / cols
+    let w = ((area.width - gap * CGFloat(cols - 1)) / CGFloat(cols)).rounded(.down)
+    let h = ((area.height - gap * CGFloat(rows - 1)) / CGFloat(rows)).rounded(.down)
+    for (i, inst) in ordered.enumerated() {
+      let col = CGFloat(i % cols), row = CGFloat(i / cols)
+      inst.tile(NSRect(x: area.minX + col * (w + gap), y: area.maxY - h - row * (h + gap), width: w, height: h))
+    }
+    focus.show()
   }
 
   // The icons are numbered left to right (by where they actually sit, so
@@ -151,6 +152,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private func registerHotkeys() {
     var wanted: [UInt32: Int] = [:]
     for inst in instances where inst.num <= Self.maxSlots { wanted[UInt32(inst.slot)] = inst.num }
+    wanted[Self.gridHotkey] = 0
     HotKeys.shared.set(wanted, modifiers: modifiers.carbon)
   }
 

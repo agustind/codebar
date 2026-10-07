@@ -25,7 +25,6 @@ final class Instance: NSObject {
   /// Where you dragged it (its top-left corner); nil while it hangs under
   /// its icon.
   private var topLeft: NSPoint?
-  private var pinned = false
   private var fontSize = Theme.defaultFontSize
 
   private var term: LocalProcessTerminalView?
@@ -43,9 +42,7 @@ final class Instance: NSObject {
   private var spinTimer: Timer?
   private var waitTimer: Timer?
 
-  private var hidePending = false
-  private var holdOpen = false // a folder picker is up
-  private var lastBlurHide = Date.distantPast
+  private var lastResignKey = Date.distantPast
 
   private var app: AppDelegate { AppDelegate.shared }
 
@@ -76,7 +73,6 @@ final class Instance: NSObject {
     window.hasShadow = true
     window.appearance = NSAppearance(named: .darkAqua)
     window.isReleasedWhenClosed = false
-    window.level = .floating // above normal windows, like a popover
     window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary] // drop down on whatever Space is active
     window.delegate = self
     ui.docked = topLeft == nil
@@ -99,7 +95,6 @@ final class Instance: NSObject {
 
   private func wireUI() {
     ui.folder.onClick = { [weak self] in self?.chooseFolder() }
-    ui.pin.onClick = { [weak self] in self?.togglePinned() }
     ui.add.onClick = { [weak self] in self?.app.newInstance() }
     ui.restart.onClick = { [weak self] in self?.startSession() }
     ui.aboutClose.onClick = { [weak self] in self?.showAbout(false) }
@@ -119,7 +114,6 @@ final class Instance: NSObject {
   func refresh() {
     ui.setBadge(num)
     ui.setHint(hotkeyLabel ?? "")
-    ui.setPinned(pinned)
     window.title = "codebar \(num)"
     refreshTray()
   }
@@ -139,15 +133,17 @@ final class Instance: NSObject {
     let image = NSImage(systemSymbolName: open ? "apple.terminal.fill" : "apple.terminal", accessibilityDescription: "codebar")
     image?.isTemplate = true
     b.image = image
-    b.title = " " + trayTitle
+    b.title = " " + (mark.map { "\(num) \($0)" } ?? String(num))
     b.toolTip = "codebar \(num) — \(folderName(cwd))"
+    ui.setStatus(mark)
   }
 
-  private var trayTitle: String {
+  /// After the number in the menu bar and the folder in the header.
+  private var mark: String? {
     switch activity {
-    case .busy: return "\(num) \(Self.spinner[spinFrame])"
-    case .waiting: return "\(num) ?"
-    case .idle: return unseen ? "\(num) ✓" : String(num)
+    case .busy: return Self.spinner[spinFrame]
+    case .waiting: return "?"
+    case .idle: return unseen ? "✓" : nil
     }
   }
 
@@ -168,9 +164,9 @@ final class Instance: NSObject {
     let hk = hotkeyLabel.map { "   (\($0))" } ?? ""
     m.addItem(ActionItem("Show / Hide" + hk) { [weak self] in self?.toggle() })
     m.addItem(ActionItem("New Instance") { [weak self] in self?.app.newInstance() })
+    m.addItem(ActionItem("Arrange in Grid   (\(app.modifiers.symbols)0)") { [weak self] in self?.app.arrange() })
     m.addItem(.separator())
     m.addItem(ActionItem("Restart Session") { [weak self] in self?.startSession() })
-    m.addItem(ActionItem("Keep Open When Unfocused", checked: pinned) { [weak self] in self?.togglePinned() })
     if topLeft != nil {
       m.addItem(ActionItem("Move Back Under Icon") { [weak self] in self?.dock() })
     }
@@ -195,12 +191,6 @@ final class Instance: NSObject {
     })
     m.addItem(ActionItem("Quit All Instances") { NSApp.terminate(nil) })
     return m
-  }
-
-  private func togglePinned() {
-    pinned.toggle()
-    refresh()
-    focusTerminal()
   }
 
   private func showAbout(_ show: Bool) {
@@ -231,17 +221,19 @@ final class Instance: NSObject {
 
   var looking: Bool { window.isVisible && window.isKeyWindow }
 
+  /// It stays open when you click away, like any other window, so the icon
+  /// and the hotkey bring it to the front and only put it away when it's
+  /// already in front.
   func toggle() {
-    if window.isVisible {
+    // (A click on the icon can take the focus away just before this.)
+    if window.isVisible && (window.isKeyWindow || Date().timeIntervalSince(lastResignKey) < 0.3) {
       hide()
-    } else if Date().timeIntervalSince(lastBlurHide) > 0.3 {
-      // (A click on the icon that just took the focus away already hid it.)
+    } else {
       show()
     }
   }
 
   func show() {
-    app.cameBack()
     setUnseen(false)
     place()
     NSApp.unhide(nil)
@@ -341,6 +333,18 @@ final class Instance: NSObject {
     }
   }
 
+  /// One cell of the grid: off its icon, as if dragged there (for this slot,
+  /// next time too). Brought up without taking the focus.
+  func tile(_ frame: NSRect) {
+    size = frame.size
+    topLeft = NSPoint(x: frame.minX, y: frame.maxY)
+    ui.docked = false
+    place()
+    saveFrame()
+    window.orderFront(nil)
+    setOpen(true)
+  }
+
   /// Back under its icon.
   private func dock() {
     guard topLeft != nil else { return }
@@ -360,34 +364,6 @@ final class Instance: NSObject {
 
   var iconX: CGFloat { statusItem.button?.window?.frame.minX ?? 0 }
 
-  // Popover behaviour: clicking elsewhere puts the terminal away. But dragging
-  // a file out of Finder takes focus the moment the drag starts, so while the
-  // mouse button is held we stay up as a drop target and decide on release.
-  // Leaving without a click (⌘Tab) puts it away too, but keeps codebar in
-  // ⌘Tab to come back to it.
-  private func hideOnBlur() {
-    guard !hidePending else { return }
-    hidePending = true
-    let blurred = Date()
-    func check() {
-      if !window.isKeyWindow && NSEvent.pressedMouseButtons & 1 != 0 {
-        return after(0.1, check)
-      }
-      // A drop lands just after the release and refocuses us.
-      after(0.15) { [self] in
-        hidePending = false
-        if !window.isKeyWindow && !pinned && !holdOpen && window.isVisible {
-          lastBlurHide = Date()
-          if !NSApp.isActive && app.lastClickElsewhere < blurred.addingTimeInterval(-0.5) {
-            app.switchedAway(from: self)
-          }
-          hide()
-        }
-      }
-    }
-    check()
-  }
-
   private func chooseFolder() {
     let panel = NSOpenPanel()
     panel.canChooseDirectories = true
@@ -397,11 +373,8 @@ final class Instance: NSObject {
     panel.directoryURL = URL(fileURLWithPath: cwd)
     panel.prompt = "Open"
     panel.message = "Restart this session in a folder"
-    panel.level = NSWindow.Level(rawValue: NSWindow.Level.floating.rawValue + 1)
-    holdOpen = true
     NSApp.activate(ignoringOtherApps: true)
     let result = panel.runModal()
-    holdOpen = false
     show()
     if result == .OK, let url = panel.url { changeFolder(url.path) }
   }
@@ -688,7 +661,7 @@ extension Instance: NSWindowDelegate {
   }
 
   func windowDidResignKey(_ notification: Notification) {
-    if !pinned && !holdOpen { hideOnBlur() }
+    lastResignKey = Date()
   }
 }
 
