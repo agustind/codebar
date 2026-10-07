@@ -16,6 +16,8 @@ extension NSColor {
 enum Theme {
   static let bg = NSColor(hex: 0x16181d)
   static let bar = NSColor(hex: 0x1e2128)
+  /// The header of the window you're typing in.
+  static let barActive = NSColor(hex: 0x292d35)
   static let line = NSColor(hex: 0x2c313b)
   static let text = NSColor(hex: 0xd8dce4)
   static let muted = NSColor(hex: 0x7d8595)

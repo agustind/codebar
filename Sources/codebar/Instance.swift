@@ -658,10 +658,12 @@ final class Instance: NSObject {
 extension Instance: NSWindowDelegate {
   func windowDidBecomeKey(_ notification: Notification) {
     setUnseen(false)
+    ui.setActive(true)
   }
 
   func windowDidResignKey(_ notification: Notification) {
     lastResignKey = Date()
+    ui.setActive(false)
   }
 }
 

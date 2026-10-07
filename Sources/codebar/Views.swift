@@ -318,6 +318,11 @@ final class InstanceView: NSView {
     needsLayout = true
   }
 
+  /// A lighter header on the window you're typing in.
+  func setActive(_ active: Bool) {
+    header.layer?.backgroundColor = (active ? Theme.barActive : Theme.bar).cgColor
+  }
+
   func setStatus(_ mark: String?) {
     status.stringValue = mark ?? ""
     status.textColor = mark == "?" ? Theme.accent : mark == "✓" ? NSColor(hex: Theme.ansi[2]) : Theme.muted
