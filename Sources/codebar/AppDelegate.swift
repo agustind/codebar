@@ -156,6 +156,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     HotKeys.shared.set(wanted, modifiers: modifiers.carbon)
   }
 
+  // ---- quitting -----------------------------------------------------------
+
+  /// How long after the first ⌘Q a second one quits.
+  static let quitWindow = 2.0
+  private var quitPressed = Date.distantPast
+
+  /// Like Chrome: the first ⌘Q only warns, in `inst`; another one soon after
+  /// quits.
+  func requestQuit(from inst: Instance) {
+    if Date().timeIntervalSince(quitPressed) < Self.quitWindow { return NSApp.terminate(nil) }
+    quitPressed = Date()
+    inst.ui.showToast("Press ⌘Q again to quit", for: Self.quitWindow)
+  }
+
   // ---- settings -----------------------------------------------------------
 
   func setModifiers(_ m: Modifiers) {

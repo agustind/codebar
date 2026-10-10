@@ -23,11 +23,12 @@ A macOS menu-bar terminal for running Claude Code.
 - **Change the hotkey** from the right-click menu under **Hotkey**: ⌃⌥, ⌘⌥, ⌃⇧ or ⌃⌘ plus the icon's number (or 0 for the grid). It applies to every instance.
 - **Resize** the window by dragging an edge or a corner. Under its icon it stays centered there (the sides move together).
 - **Move** it anywhere by dragging its header, onto any screen. It opens there from then on; double-click the header (or **Move Back Under Icon** in the right-click menu) to put it back under its icon. Each instance slot remembers its size and place.
-- The window stays open when you click away, like any other window, so other windows can go in front of it. Clicking the icon or pressing the hotkey brings it back to the front, or puts it away if it's already in front. While a terminal is open and you're in another app, codebar shows up in ⌘Tab (and the Dock), so ⌘Tab brings it back too.
+- The window stays open when you click away, like any other window, so other windows can go in front of it. Clicking the icon or pressing the hotkey brings it back to the front, or puts it away if it's already in front. While a terminal is open and you're in another app, codebar shows up in ⌘Tab (and the Dock), so ⌘Tab brings it back too. An open window stays on the Space it was opened on (so it doesn't float over a full-screen app), and the icon or hotkey brings it to the Space you're on.
 - **Drag files in** from Finder to paste their paths (images too, for Claude Code).
+- The window you're typing in has a lighter header with an orange line under it.
 - The header shows the name of the folder the terminal is in, in capitals (hover for the full path), and follows `cd`. **⌘O** (or click the name) restarts the session in a new directory. Each instance slot remembers its own folder.
 
-Keys inside the terminal: ⇧↩ newline · ⌘-click a link to open it · ⌘C copy selection · ⌘V paste · ⌘K clear · ⌘N new instance · ⌘\` / ⇧⌘\` next / previous instance · ⌘+/⌘−/⌘0 zoom. **⌘W** quits the instance from anywhere in its window; if Claude is working or waiting on you it asks first (↵ quit, esc cancel). **⌘Q** quits all instances.
+Keys inside the terminal: ⇧↩ newline · ⌘-click a link to open it · ⌘C copy selection · ⌘V paste · ⌘K clear · ⌘N new instance · ⌘\` / ⇧⌘\` next / previous instance · ⌘+/⌘−/⌘0 zoom. **⌘W** quits the instance from anywhere in its window; if Claude is working or waiting on you it asks first (↵ quit, esc cancel). **⌘Q** twice quits all instances (the first press only warns).
 
 ## Install
 

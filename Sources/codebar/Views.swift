@@ -84,6 +84,34 @@ func label(_ text: String, size: CGFloat = 12, weight: NSFont.Weight = .regular,
   return l
 }
 
+/// The little pixel bug at the start of the header, after Claude's logo.
+final class PixelBug: NSView {
+  /// `#` is filled; the eyes are holes, so the header shows through them.
+  static let rows = [
+    ".##########.",
+    ".##.####.##.",
+    ".##.####.##.",
+    "############",
+    "############",
+    "..#.#..#.#..",
+    "..#.#..#.#..",
+  ]
+  static let pixel: CGFloat = 2
+  static let size = NSSize(width: CGFloat(rows[0].count) * pixel, height: CGFloat(rows.count) * pixel)
+
+  override var isFlipped: Bool { true }
+
+  override func draw(_ dirtyRect: NSRect) {
+    Theme.accent.setFill()
+    let p = Self.pixel
+    for (y, row) in Self.rows.enumerated() {
+      for (x, c) in row.enumerated() where c == "#" {
+        NSRect(x: CGFloat(x) * p, y: CGFloat(y) * p, width: p, height: p).fill()
+      }
+    }
+  }
+}
+
 /// Dims the window and shows a box in the middle; a click outside it
 /// dismisses.
 final class Overlay: NSView {
@@ -161,8 +189,9 @@ final class InstanceView: NSView {
   }
 
   let header = NSView()
-  let badge = label("1", size: 11, weight: .semibold, color: .white)
-  let badgeBG = NSView()
+  /// The line under the header; orange on the window you're typing in.
+  let rule = NSView()
+  let bug = PixelBug()
   let folder = FlatButton(font: .monospacedSystemFont(ofSize: 12, weight: .regular))
   let hint = label("", size: 11, color: Theme.muted)
   /// Claude's activity, after the folder: the spinner, ? or ✓.
@@ -179,6 +208,9 @@ final class InstanceView: NSView {
   let quitMessage: NSTextField
   let quitCancel = FlatButton()
   let quitOk = FlatButton()
+  /// A pill at the top, e.g. "Press ⌘Q again to quit".
+  let toast = NSView()
+  let toastLabel = label("", weight: .medium)
 
   var onDrop: (([String]) -> Void)?
   var onOpenURL: ((URL) -> Void)?
@@ -208,19 +240,12 @@ final class InstanceView: NSView {
 
     header.wantsLayer = true
     header.layer?.backgroundColor = Theme.bar.cgColor
-    let rule = NSView(frame: NSRect(x: 0, y: 0, width: 10000, height: 1))
     rule.wantsLayer = true
-    rule.layer?.backgroundColor = Theme.line.cgColor
     header.addSubview(rule)
-    badgeBG.wantsLayer = true
-    badgeBG.layer?.backgroundColor = Theme.accent.cgColor
-    badgeBG.layer?.cornerRadius = 9
-    badge.alignment = .center
-    badgeBG.addSubview(badge)
     add.toolTip = "New instance (⌘N)"
     add.tint = Theme.muted
     status.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
-    for v in [badgeBG, folder, status, hint, add] { header.addSubview(v) }
+    for v in [bug, folder, status, hint, add] { header.addSubview(v) }
     addSubview(termBox)
     addSubview(header)
 
@@ -276,6 +301,17 @@ final class InstanceView: NSView {
     quit.isHidden = true
     addSubview(quit)
 
+    toast.wantsLayer = true
+    toast.layer?.backgroundColor = Theme.barActive.cgColor
+    toast.layer?.borderColor = Theme.line.cgColor
+    toast.layer?.borderWidth = 1
+    toast.layer?.cornerRadius = 14
+    toast.addSubview(toastLabel)
+    toast.isHidden = true
+    addSubview(toast)
+
+    setActive(false)
+
     registerForDraggedTypes([.fileURL])
   }
 
@@ -298,11 +334,6 @@ final class InstanceView: NSView {
     termBox.addSubview(view)
   }
 
-  func setBadge(_ n: Int) {
-    badge.stringValue = String(n)
-    needsLayout = true
-  }
-
   func setHint(_ text: String) {
     hint.stringValue = text
     needsLayout = true
@@ -318,10 +349,33 @@ final class InstanceView: NSView {
     needsLayout = true
   }
 
-  /// A lighter header on the window you're typing in.
+  /// A lighter header with an orange line under it on the window you're
+  /// typing in; the others' are dimmed.
   func setActive(_ active: Bool) {
     header.layer?.backgroundColor = (active ? Theme.barActive : Theme.bar).cgColor
+    rule.layer?.backgroundColor = (active ? Theme.accent : Theme.line).cgColor
+    rule.frame.size.height = active ? 2 : 1
+    folder.tint = active ? Theme.text : Theme.muted
+    bug.alphaValue = active ? 1 : 0.5
   }
+
+  /// Shows `text` at the top for `seconds`, then fades it out.
+  func showToast(_ text: String, for seconds: Double) {
+    toastLabel.stringValue = text
+    needsLayout = true
+    toast.isHidden = false
+    toast.alphaValue = 1
+    let shown = Date()
+    toastShown = shown
+    after(seconds) { [weak self] in
+      guard let self, toastShown == shown else { return }
+      NSAnimationContext.runAnimationGroup({ $0.duration = 0.25; self.toast.animator().alphaValue = 0 }) {
+        if self.toastShown == shown { self.toast.isHidden = true }
+      }
+    }
+  }
+
+  private var toastShown: Date?
 
   func setStatus(_ mark: String?) {
     status.stringValue = mark ?? ""
@@ -341,18 +395,17 @@ final class InstanceView: NSView {
     super.layout()
     let w = bounds.width, h = bounds.height, hh = Self.headerHeight
     header.frame = NSRect(x: 0, y: h - hh, width: w, height: hh)
+    rule.frame = NSRect(x: 0, y: 0, width: w, height: rule.frame.height)
 
-    // Header, left to right: badge, folder, status … hint, add.
-    badge.sizeToFit()
-    let bw = max(18, badge.frame.width + 10)
-    badgeBG.frame = NSRect(x: 8, y: (hh - 18) / 2, width: bw, height: 18)
-    badge.frame = NSRect(x: 0, y: (18 - badge.frame.height) / 2, width: bw, height: badge.frame.height)
+    // Header, left to right: bug, folder, status … hint, add.
+    let bs = PixelBug.size
+    bug.frame = NSRect(origin: NSPoint(x: 10, y: ((hh - bs.height) / 2).rounded()), size: bs)
     var right = w - 8
     add.frame = NSRect(x: right - 24, y: (hh - 22) / 2, width: 24, height: 22)
     right -= 24 + 6
     hint.sizeToFit()
     hint.frame.origin = NSPoint(x: right - hint.frame.width, y: ((hh - hint.frame.height) / 2).rounded())
-    let fx = badgeBG.frame.maxX + 6
+    let fx = bug.frame.maxX + 4
     let fs = folder.fit(padX: 8, height: 22)
     folder.frame = NSRect(x: fx, y: (hh - 22) / 2, width: min(fs.width, w * 0.5), height: 22)
     status.sizeToFit()
@@ -367,6 +420,11 @@ final class InstanceView: NSView {
     exited.frame = NSRect(x: ((w - ew) / 2).rounded(), y: 14, width: ew, height: 34)
     exitedLabel.frame.origin = NSPoint(x: 12, y: ((34 - exitedLabel.frame.height) / 2).rounded())
     restart.frame = NSRect(x: ew - 6 - rs.width, y: 6, width: rs.width, height: 22)
+
+    toastLabel.sizeToFit()
+    let tw = toastLabel.frame.width + 28
+    toast.frame = NSRect(x: ((w - tw) / 2).rounded(), y: h - hh - 14 - 28, width: tw, height: 28)
+    toastLabel.frame.origin = NSPoint(x: 14, y: ((28 - toastLabel.frame.height) / 2).rounded())
 
     about.frame = bounds
     quit.frame = bounds

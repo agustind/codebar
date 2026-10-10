@@ -73,7 +73,9 @@ final class Instance: NSObject {
     window.hasShadow = true
     window.appearance = NSAppearance(named: .darkAqua)
     window.isReleasedWhenClosed = false
-    window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary] // drop down on whatever Space is active
+    // Stays on the Space it was shown on (so it doesn't follow you onto a
+    // full-screen app), and moves to the current one when brought up.
+    window.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
     window.delegate = self
     ui.docked = topLeft == nil
     ui.layoutSubtreeIfNeeded()
@@ -112,7 +114,6 @@ final class Instance: NSObject {
 
   /// Everything that shows the number, the hotkey, the state or the folder.
   func refresh() {
-    ui.setBadge(num)
     ui.setHint(hotkeyLabel ?? "")
     window.title = "codebar \(num)"
     refreshTray()
@@ -226,7 +227,7 @@ final class Instance: NSObject {
   /// already in front.
   func toggle() {
     // (A click on the icon can take the focus away just before this.)
-    if window.isVisible && (window.isKeyWindow || Date().timeIntervalSince(lastResignKey) < 0.3) {
+    if window.isVisible && window.isOnActiveSpace && (window.isKeyWindow || Date().timeIntervalSince(lastResignKey) < 0.3) {
       hide()
     } else {
       show()
@@ -415,9 +416,10 @@ final class Instance: NSObject {
       quit(force: false)
       return true
     }
-    // ⌘Q quits the whole app, every instance with it.
+    // ⌘Q quits the whole app, every instance with it, if pressed twice (held
+    // down doesn't count).
     if mods == .command && key == "q" {
-      NSApp.terminate(nil)
+      if !e.isARepeat { app.requestQuit(from: self) }
       return true
     }
     // ⌘` / ⇧⌘` switches to the next / previous instance (by the key, not the
